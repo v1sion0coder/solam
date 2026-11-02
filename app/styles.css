@@ -546,3 +546,9 @@ textarea.field { display: block; max-width: 100%; height: auto; padding: 9px 13p
 .steps li { margin-bottom: 4px; }
 .link-chip { margin: 2px 0 8px; font-size: 12.5px; }
 .connector-card textarea.field { max-width: 560px; }
+
+.full-song { flex: none; height: 30px; padding: 0 12px; font-size: 12.5px; white-space: nowrap; }
+#bc-full { align-self: flex-start; margin: -6px 0 14px; }
+@media (max-width: 1180px) {
+  #np-full { display: none; }
+}

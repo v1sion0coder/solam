@@ -593,6 +593,9 @@
     badge.hidden = !np.badge;
     badge.textContent = np.badge;
     badge.classList.toggle('lossless', Boolean(np.lossless));
+    const onlyPreview = hasOnlyPreview(player.queue[player.index]);
+    $('#np-full').hidden = !onlyPreview;
+    $('#bc-full').hidden = !onlyPreview;
     setIcon($('#np-play'), np.playing ? 'pause' : 'play');
     $('#np-pos').textContent = formatTime(np.pos);
     $('#np-dur').textContent = formatTime(np.dur);
@@ -1194,6 +1197,46 @@
     menu.style.top = `${Math.max(12, Math.min(box.bottom + 6, window.innerHeight - menu.offsetHeight - 12))}px`;
   }
 
+  const FULL_SONG_SERVICES = [
+    ['Spotify', (q) => `https://open.spotify.com/search/${q}`],
+    ['YouTube Music', (q) => `https://music.youtube.com/search?q=${q}`],
+    ['Apple Music', (q) => `https://music.apple.com/search?term=${q}`],
+    ['Deezer', (q) => `https://www.deezer.com/search/${q}`],
+  ];
+
+  const hasOnlyPreview = (track) => track?.source === 'preview' || track?.source === 'imported';
+
+  // Full songs by famous artists are licensed to these services, so Solam sends people there to hear them.
+  function showFullSongMenu(track, anchor) {
+    closeMenu();
+    const query = encodeURIComponent(`${track.artist} ${track.title}`);
+    const menu = h('div', { class: 'pop-menu', role: 'menu' },
+      h('p', { class: 'pop-title', text: 'Listen to the full song on' }),
+      ...FULL_SONG_SERVICES.map(([name, link]) => h('button', {
+        raw: name,
+        role: 'menuitem',
+        onclick: () => {
+          api.openLink(link(query));
+          closeMenu();
+        },
+      })));
+    document.body.append(menu);
+    placeMenu(menu, anchor);
+    closeMenuOnTapAway(menu);
+  }
+
+  function closeMenuOnTapAway(menu) {
+    setTimeout(() => {
+      const away = (event) => {
+        if (!menu.contains(event.target)) {
+          closeMenu();
+          window.removeEventListener('pointerdown', away, true);
+        }
+      };
+      window.addEventListener('pointerdown', away, true);
+    });
+  }
+
   function canDownload(track) {
     return track.source !== 'local' && track.source !== 'preview' && track.source !== 'imported' && (track.source === 'free' || Boolean(track.downloadable));
   }
@@ -1252,6 +1295,7 @@
     const isOffline = offlineFiles.has(trackKey(track));
     const item = (text, onclick) => h('button', { text, role: 'menuitem', onclick });
     menu.append(
+      hasOnlyPreview(track) ? item('Listen to the full song', () => showFullSongMenu(track, anchor)) : null,
       isOffline ? item('Remove download', () => { removeDownload(track); closeMenu(); }) : null,
       !isOffline && canDownload(track) ? item('Download for offline', () => { downloadTrack(track); closeMenu(); }) : null,
       !isOffline && (track.source === 'preview' || track.source === 'imported') ? h('p', { class: 'pop-note', text: 'Previews can’t be downloaded.' }) : null,
@@ -1261,15 +1305,7 @@
       h('div', { class: 'pop-new' }, nameInput, h('button', { class: 'button small', text: 'Create', onclick: create })));
     document.body.append(menu);
     placeMenu(menu, anchor);
-    setTimeout(() => {
-      const away = (event) => {
-        if (!menu.contains(event.target)) {
-          closeMenu();
-          window.removeEventListener('pointerdown', away, true);
-        }
-      };
-      window.addEventListener('pointerdown', away, true);
-    });
+    closeMenuOnTapAway(menu);
   }
 
   let collectionTab = 'favorites';
@@ -2392,6 +2428,13 @@
     setIcon($('#np-mini'), 'mini');
     setIcon($('#bigcover-close'), 'down');
     setIcon($('#np-heart'), 'heart');
+    for (const selector of ['#np-full', '#bc-full']) {
+      $(selector).textContent = t('Listen to the full song');
+      $(selector).onclick = (event) => {
+        const track = player.queue[player.index];
+        if (track) showFullSongMenu(track, event.currentTarget);
+      };
+    }
     $('#np-heart').onclick = () => {
       const track = player.queue[player.index];
       if (track) {

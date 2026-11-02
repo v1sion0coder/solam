@@ -4,7 +4,7 @@ body { --top: calc(env(safe-area-inset-top, 0px) + 44px); --tabs: calc(env(safe-
 
 #titlebar { position: fixed; top: env(safe-area-inset-top, 0px); height: 44px; -webkit-app-region: none; }
 .brand { padding-left: 16px; }
-.win-buttons, #np-mini, #np-viz, #np-badge { display: none !important; }
+.win-buttons, #np-mini, #np-viz, #np-badge, #np-full { display: none !important; }
 
 #stage { top: var(--top); left: 8px; right: 8px; bottom: calc(var(--tabs) + 78px); }
 .scroll { padding: 18px 16px 28px; -webkit-overflow-scrolling: touch; }

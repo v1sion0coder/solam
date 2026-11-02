@@ -254,6 +254,8 @@
     'Reset all settings': 'Сбросить все настройки',
     'Settings reset to defaults.': 'Настройки сброшены.',
     '30s preview': 'Превью 30 с',
+    'Listen to the full song': 'Слушать песню целиком',
+    'Listen to the full song on': 'Слушать песню целиком в',
     Connectors: 'Подключения',
     'For you': 'Для вас',
     Imported: 'Импорт',
