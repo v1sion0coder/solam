@@ -10,7 +10,7 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   background:
     radial-gradient(80vw 50vh at 20% 10%, rgba(255, 74, 162, 0.32), transparent 70%),
     radial-gradient(80vw 60vh at 85% 75%, rgba(30, 212, 214, 0.26), transparent 70%),

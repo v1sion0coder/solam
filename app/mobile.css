@@ -1,5 +1,5 @@
 /* The phone layout of Solam. */
-html, body { height: 100dvh; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+html, body { height: 100dvh; overscroll-behavior: none; -webkit-text-size-adjust: 100%; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 body { --top: calc(env(safe-area-inset-top, 0px) + 44px); --tabs: calc(env(safe-area-inset-bottom, 0px) + 62px); }
 
 #titlebar { position: fixed; top: env(safe-area-inset-top, 0px); height: 44px; -webkit-app-region: none; }
@@ -70,7 +70,7 @@ body { --top: calc(env(safe-area-inset-top, 0px) + 44px); --tabs: calc(env(safe-
 #bc-img { width: min(76vw, 42dvh); }
 .bc-side { height: auto; padding-top: 16px; }
 #bc-title { font-size: 25px; }
-.bc-lyrics { min-height: 240px; }
+.bc-lyrics { flex: none; height: max(260px, 42dvh); }
 .bc-lyrics p { font-size: 18px; }
 body.big #player { height: 140px; flex-wrap: wrap; align-content: center; padding-top: 8px; padding-bottom: 8px; border-radius: 28px; }
 body.big .np-text { flex-basis: calc(100% - 110px); }
@@ -78,3 +78,20 @@ body.big .np-center { order: 3; width: 100%; flex-basis: 100%; }
 body.big .np-time { display: flex; max-width: none; }
 body.big #np-prev { display: grid; }
 body.big.idle #player { opacity: 1; transform: none; }
+
+/* A phone on its side has little height, so the glass shrinks to fit. */
+@media (orientation: landscape) and (max-height: 500px) {
+  body { --top: 36px; --tabs: calc(env(safe-area-inset-bottom, 0px) + 50px); }
+  #titlebar { height: 36px; }
+  #stage { left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); bottom: calc(var(--tabs) + 58px); }
+  #dock { height: 46px; left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); }
+  .dock-item { padding: 2px 0; }
+  .dock-item span { display: none; }
+  #player { height: 52px; bottom: calc(var(--tabs) + 2px); left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); }
+  #np-art { width: 40px; height: 40px; }
+  .icon-button.big { width: 36px; height: 36px; }
+  #bigcover { inset: var(--top) 0 calc(var(--tabs) + 62px); }
+  body.big #player { height: 52px; flex-wrap: nowrap; }
+  body.big .np-center { order: 0; width: auto; flex-basis: auto; }
+  body.big .np-time { display: none; }
+}

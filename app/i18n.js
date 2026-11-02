@@ -254,6 +254,7 @@
     'Reset all settings': 'Сбросить все настройки',
     'Settings reset to defaults.': 'Настройки сброшены.',
     '30s preview': 'Превью 30 с',
+    'This is a 30-second preview, so the lyrics can’t follow along.': 'Это 30-секундное превью, поэтому текст не движется вместе с песней.',
     'Listen to the full song': 'Слушать песню целиком',
     'Listen to the full song on': 'Слушать песню целиком в',
     Connectors: 'Подключения',

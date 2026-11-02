@@ -70,6 +70,9 @@
   const SLEEP_FADE_SECONDS = 15;
   const PLAY_COUNT_AFTER_SECONDS = 20;
   const MAX_SKIPS_IN_A_ROW = 5;
+  const SECONDS_PER_LYRIC_LETTER = 0.085;
+  const MIN_LINE_SECONDS = 1.5;
+  const LAST_LINE_SECONDS = 5;
   const PREVIEW_VOLUME_SCALE = 0.55;
   const PAGES_FREED_ON_LEAVE = ['artists', 'artist', 'collection', 'library', 'connectors', 'upload', 'account', 'settings'];
   const ICONS = {
@@ -733,18 +736,23 @@
       ? { synced: /^\s*\[\d+:\d+/.test(own) ? own : '', plain: own }
       : await api.lyrics({ title, artist, album, duration: dur });
     if (token !== lyrics.token) return;
-    if (found?.synced) {
+    // A preview is a short clip from inside the song, so timed lyrics wouldn't line up with it.
+    const isPreview = player.queue[player.index]?.source === 'preview';
+    if (found?.synced && !isPreview) {
       lyrics.lines = parseSynced(found.synced);
       lyrics.synced = lyrics.lines.length > 0;
     }
+    const plainText = String(found?.plain || found?.synced || '').replace(/^\s*\[[^\]]*\]\s*/gm, '');
     const box = $('#bc-lyrics');
     if (lyrics.synced) {
       box.classList.remove('plain');
-      box.replaceChildren(...lyrics.lines.map((line) => h('p', { raw: line.text })));
+      box.replaceChildren(...lyrics.lines.map((line) => h('p', { raw: line.text, onclick: () => seekTo(line.time) })));
       updateLyricsPosition();
-    } else if (found?.plain) {
+    } else if (plainText.trim()) {
       box.classList.add('plain');
-      box.replaceChildren(...found.plain.split('\n').map((line) => h('p', { raw: line || ' ' })));
+      box.replaceChildren(
+        isPreview ? h('p', { class: 'lyric-note', text: 'This is a 30-second preview, so the lyrics can’t follow along.' }) : null,
+        ...plainText.split('\n').map((line) => h('p', { raw: line || ' ' })));
     } else {
       showLyricNote('No lyrics found for this song.');
     }
@@ -752,21 +760,29 @@
 
   function updateLyricsPosition() {
     if (!lyrics.synced) return;
-    const { pos } = player.np;
+    const pos = audio.getAttribute('src') ? audio.currentTime : player.np.pos;
     let index = -1;
     for (let i = 0; i < lyrics.lines.length; i++) {
       if (lyrics.lines[i].time <= pos + 0.15) index = i;
       else break;
     }
-    if (index === lyrics.currentIndex) return;
-    lyrics.currentIndex = index;
     const box = $('#bc-lyrics');
-    [...box.children].forEach((line, i) => {
-      line.classList.toggle('current', i === index);
-      line.classList.toggle('past', i < index);
-    });
-    const current = box.children[index];
-    if (current) box.scrollTop = current.offsetTop - box.clientHeight / 2 + current.offsetHeight / 2;
+    if (index !== lyrics.currentIndex) {
+      lyrics.currentIndex = index;
+      [...box.children].forEach((line, i) => {
+        line.classList.toggle('current', i === index);
+        line.classList.toggle('past', i < index);
+      });
+      const current = box.children[index];
+      if (current) box.scrollTop = current.offsetTop - box.clientHeight / 2 + current.offsetHeight / 2;
+    }
+    const line = lyrics.lines[index];
+    if (!line) return;
+    // The lyrics are timed by line, so the sweep across a line's words is a close estimate.
+    const next = lyrics.lines[index + 1]?.time ?? line.time + LAST_LINE_SECONDS;
+    const sung = Math.max(MIN_LINE_SECONDS, Math.min(next - line.time, line.text.length * SECONDS_PER_LYRIC_LETTER));
+    const progress = Math.max(0, Math.min(1, (pos - line.time) / sung));
+    box.children[index]?.style.setProperty('--sweep', `${(progress * 100).toFixed(1)}%`);
   }
 
   /* ---------- navigation ---------- */
@@ -2369,6 +2385,7 @@
     updateAnalysis();
     drawBars();
     drawRing();
+    if (document.body.classList.contains('big')) updateLyricsPosition();
     if (miniOpen && ++miniFrame % 3 === 0) api.sendSpectrum(spectrumBars(26));
   }
 
@@ -2527,7 +2544,7 @@
   }
 
   if (isWeb) {
-    engine.maxRatio = 0.8;
+    engine.maxRatio = 1.25;
     engine.minFrameMs = 33;
   }
 
