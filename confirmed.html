@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Email confirmed: Solam</title>
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // The link carries a temporary login code. Solam doesn't need it here, so it is wiped from the address bar right away.
+    (function () {
+      var failed = /error/.test(location.hash + location.search);
+      history.replaceState(null, '', location.pathname);
+      window.solamConfirmFailed = failed;
+    })();
+  </script>
+</head>
+<body>
+  <main class="center">
+    <a class="brand" href="./"><img src="icon.png" alt="">Solam <span class="beta">BETA</span></a>
+    <section class="glass" id="ok">
+      <div class="check" aria-hidden="true">✓</div>
+      <h1>Your email is confirmed</h1>
+      <p>Go back to Solam and sign in. You can close this tab.</p>
+      <div class="ru" lang="ru">
+        <h2>Почта подтверждена</h2>
+        <p>Вернитесь в Solam и войдите. Эту вкладку можно закрыть.</p>
+      </div>
+    </section>
+    <section class="glass" id="bad" hidden>
+      <h1>This link didn't work</h1>
+      <p>It may be old or already used. Try signing in to Solam. If that fails, create your account again or write to <a href="mailto:salam0support@gmail.com">salam0support@gmail.com</a>.</p>
+      <div class="ru" lang="ru">
+        <h2>Ссылка не сработала</h2>
+        <p>Возможно, она устарела или уже использована. Попробуйте войти в Solam. Если не получится, создайте аккаунт заново или напишите на <a href="mailto:salam0support@gmail.com">salam0support@gmail.com</a>.</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    if (window.solamConfirmFailed) {
+      document.getElementById('ok').hidden = true;
+      document.getElementById('bad').hidden = false;
+    }
+  </script>
+</body>
+</html>
