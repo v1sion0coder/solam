@@ -49,3 +49,10 @@ a { color: #8fe6ff; }
 .note { font-size: 14px; }
 footer { margin-top: 34px; color: var(--soft); font-size: 14px; }
 footer a { margin-right: 14px; }
+
+.field-label { display: block; margin: 16px 0 6px; font-weight: 600; }
+.field { width: 100%; max-width: 420px; height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: rgba(255, 255, 255, 0.1); font: inherit; }
+button.button { border: 0; cursor: pointer; font: inherit; font-weight: 700; }
+ol { padding-left: 20px; }
+code { font-size: 13px; }
+.hash { display: block; margin-top: 6px; overflow-wrap: anywhere; color: var(--ink); }

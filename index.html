@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Solam: free music player for Windows</title>
-  <meta name="description" content="Solam is a free liquid glass music player for Windows 10 and 11. Beta version.">
+  <title>Solam: free music player for Windows and iPhone</title>
+  <meta name="description" content="Solam is a free liquid glass music player for Windows 10 and 11, and iPhone. Beta version.">
   <link rel="icon" href="icon.png">
+  <link rel="apple-touch-icon" href="icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,22 +14,40 @@
     <a class="brand" href="./"><img src="icon.png" alt="">Solam <span class="beta">BETA</span></a>
     <section class="glass">
       <h1>Your music, behind liquid glass.</h1>
-      <p>A free music player for Windows 10 and 11, with animated themes, synced lyrics and artists you can follow. Upload your own songs for everyone to hear.</p>
-      <a class="button" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam.exe">Download for Windows</a>
-      <p class="note">This is a beta version, so some things may not work yet. Windows may warn you because the app isn't signed: click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+      <p>A free music player with animated themes, synced lyrics and artists you can follow. Upload your own songs for everyone to hear.</p>
+      <p class="note">This is a beta version, so some things may not work yet.</p>
+
+      <h2>Windows 10 and 11</h2>
+      <a class="button" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam-Setup.exe">Download for Windows</a>
+
+      <h2>iPhone</h2>
+      <a class="button" href="app/">Open Solam for iPhone</a>
+      <ol>
+        <li>Open that link in <strong>Safari</strong>.</li>
+        <li>Tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+        <li>Open Solam from your Home Screen, like any other app.</li>
+      </ol>
+      <p class="note">It isn't on the App Store yet. Some things work differently on iPhone: music may stop when the phone is locked, and volume is set with your phone's buttons.</p>
 
       <h2>What's inside</h2>
       <ul>
-        <li>Free songs from independent artists and legal free albums, plus your own files</li>
+        <li>Free songs from independent artists and legal free albums</li>
         <li>30-second previews of famous artists</li>
-        <li>Animated themes, song transitions and a mini player</li>
-        <li>English and Russian</li>
+        <li>Bring your playlists and favourite artists from other music services</li>
+        <li>Animated themes and English and Russian</li>
       </ul>
+
+      <h2>Why Windows shows a warning</h2>
+      <p>Windows warns about new apps that don't yet have a paid digital signature and a download history, which is the case for Solam. If you trust this site, click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+      <p class="note">You can check that your download is the original. In PowerShell, run <code>Get-FileHash Solam-Setup.exe</code> and compare it with:<br><code class="hash">C9C76EE925EEAE7A1EA7B00DF87C52CFE174C7B217678DC496A549CBDA957C20</code></p>
 
       <div class="ru" lang="ru">
         <h2>По-русски</h2>
-        <p>Solam — бесплатный музыкальный плеер для Windows 10 и 11 с анимированными темами, текстами песен и подписками на артистов. Это бета-версия, поэтому что-то может пока работать не так. Если Windows покажет предупреждение, нажмите <strong>Подробнее</strong>, затем <strong>Выполнить в любом случае</strong>.</p>
-        <a class="button ghost" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam.exe">Скачать для Windows</a>
+        <p>Solam — бесплатный музыкальный плеер для Windows 10 и 11 и iPhone. Это бета-версия, поэтому что-то может пока работать не так.</p>
+        <a class="button ghost" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam-Setup.exe">Скачать для Windows</a>
+        <a class="button ghost" href="app/">Открыть для iPhone</a>
+        <p><strong>iPhone:</strong> откройте ссылку в Safari, нажмите «Поделиться», затем «На экран „Домой“» и «Добавить».</p>
+        <p><strong>Windows:</strong> система предупреждает о новых приложениях без платной цифровой подписи. Если вы доверяете этому сайту, нажмите «Подробнее», затем «Выполнить в любом случае».</p>
       </div>
     </section>
     <footer>

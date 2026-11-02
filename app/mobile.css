@@ -1,0 +1,80 @@
+/* The phone layout of Solam. */
+html, body { height: 100dvh; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+body { --top: calc(env(safe-area-inset-top, 0px) + 44px); --tabs: calc(env(safe-area-inset-bottom, 0px) + 62px); }
+
+#titlebar { position: fixed; top: env(safe-area-inset-top, 0px); height: 44px; -webkit-app-region: none; }
+.brand { padding-left: 16px; }
+.win-buttons, #np-mini, #np-viz, #np-badge { display: none !important; }
+
+#stage { top: var(--top); left: 8px; right: 8px; bottom: calc(var(--tabs) + 78px); }
+.scroll { padding: 18px 16px 28px; -webkit-overflow-scrolling: touch; }
+.page-title { font-size: 25px; }
+.search { max-width: 100%; font-size: 16px; }
+.field { font-size: 16px; max-width: 100%; }
+
+#dock {
+  top: auto; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
+  width: auto; height: 58px; flex-direction: row; justify-content: flex-start; gap: 2px;
+  padding: 0 6px; overflow-x: auto; overflow-y: hidden; border-radius: 29px;
+}
+.dock-spacer { display: none; }
+.dock-item { flex: 0 0 62px; width: 62px; font-size: 10px; }
+
+#player {
+  left: 8px; right: 8px; bottom: calc(var(--tabs) + 6px); height: 66px; gap: 9px;
+  padding: 0 10px 0 8px; border-radius: 33px;
+}
+#np-art { width: 50px; height: 50px; }
+.np-text { flex: 1 1 auto; min-width: 0; }
+.np-center { flex: none; min-width: 0; }
+.np-time, #np-prev, .np-tools { display: none; }
+#np-heart { width: 34px; height: 34px; flex: none; }
+.np-controls { gap: 2px; }
+.icon-button.big { width: 42px; height: 42px; }
+
+.track { grid-template-columns: 44px minmax(0, 1fr) 34px 34px; gap: 7px; padding: 7px 4px; }
+.track .plays, .track .badge, .track time { display: none; }
+.track .add, .track .heart:not(.on) { opacity: 0.8; }
+.track:hover { transform: none; box-shadow: none; }
+
+.artist-card { flex-basis: 112px; }
+.artist-card img, .blank.round { width: 84px; height: 84px; }
+.artist-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+.album-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.top-artist img, .top-artist .blank.round { width: 68px; height: 68px; }
+.top-artist strong { font-size: 19px; }
+
+.artist-banner { min-height: 0; }
+.banner-content { flex-direction: column; align-items: flex-start; gap: 12px; padding: 54px 16px 16px; }
+.banner-pic, .banner-content .blank.round { width: 96px; height: 96px; }
+.banner-text h1 { font-size: 27px; }
+.stats { gap: 18px; }
+
+.setting { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px 0; }
+.setting output { display: none; }
+.setting-group { padding: 14px; }
+.theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.source-row, .review-row { flex-wrap: wrap; }
+.connector-card .actions { flex-wrap: wrap; }
+.perks { grid-template-columns: minmax(0, 1fr); }
+.pop-menu { max-width: calc(100vw - 24px); }
+#toast { width: calc(100% - 32px); max-width: none; bottom: calc(var(--tabs) + 82px); }
+
+/* Big cover becomes one scrolling column, with the seek bar back in the player. */
+#bigcover {
+  inset: var(--top) 0 calc(var(--tabs) + 150px); display: block; overflow-y: auto; padding: 8px 18px 20px;
+}
+#bigcover-close { top: 0; left: 8px; }
+.bc-art { height: auto; padding-top: 42px; }
+#bc-viz { display: none; }
+#bc-img { width: min(76vw, 42dvh); }
+.bc-side { height: auto; padding-top: 16px; }
+#bc-title { font-size: 25px; }
+.bc-lyrics { min-height: 240px; }
+.bc-lyrics p { font-size: 18px; }
+body.big #player { height: 140px; flex-wrap: wrap; align-content: center; padding-top: 8px; padding-bottom: 8px; border-radius: 28px; }
+body.big .np-text { flex-basis: calc(100% - 110px); }
+body.big .np-center { order: 3; width: 100%; flex-basis: 100%; }
+body.big .np-time { display: flex; max-width: none; }
+body.big #np-prev { display: grid; }
+body.big.idle #player { opacity: 1; transform: none; }

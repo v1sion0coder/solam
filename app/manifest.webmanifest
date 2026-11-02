@@ -1,0 +1,19 @@
+{
+  "name": "Solam",
+  "short_name": "Solam",
+  "description": "A free liquid glass music player",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0c1c",
+  "theme_color": "#0a0c1c",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
