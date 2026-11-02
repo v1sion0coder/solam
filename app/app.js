@@ -74,6 +74,7 @@
   const MIN_LINE_SECONDS = 1.5;
   const LAST_LINE_SECONDS = 5;
   const PREVIEW_VOLUME_SCALE = 0.55;
+  const LIGHT_GLASS_OVER_BUDGET = 1.4;
   const PAGES_FREED_ON_LEAVE = ['artists', 'artist', 'collection', 'library', 'connectors', 'upload', 'account', 'settings'];
   const ICONS = {
     home: 'M4 11 12 4l8 7v9h-5v-6H9v6H4z',
@@ -328,7 +329,7 @@
   const NOTHING = { source: null, title: '', artist: '', album: '', art: '', pos: 0, dur: 0, playing: false, badge: '', lossless: false };
   const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0 };
   const fade = { timer: 0, active: false, from: null, to: null };
-  const sleep = { timer: 0, ends: 0 };
+  const sleep = { timer: 0, ends: 0, minutes: 0 };
 
   function localUrl(filePath) {
     return `solam-media://track/?p=${encodeURIComponent(filePath)}`;
@@ -372,6 +373,9 @@
           step(1);
         } else {
           player.skips = 0;
+          audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
         }
         return;
       }
@@ -554,6 +558,7 @@
   function setSleepTimer(minutes) {
     clearTimeout(sleep.timer);
     sleep.ends = 0;
+    sleep.minutes = minutes;
     if (!minutes) return;
     sleep.ends = Date.now() + minutes * 60000;
     sleep.timer = setTimeout(fadeToSleep, minutes * 60000);
@@ -561,6 +566,7 @@
 
   function fadeToSleep() {
     sleep.ends = 0;
+    sleep.minutes = 0;
     const started = performance.now();
     const timer = setInterval(() => {
       const progress = Math.min(1, (performance.now() - started) / (SLEEP_FADE_SECONDS * 1000));
@@ -737,7 +743,7 @@
       : await api.lyrics({ title, artist, album, duration: dur });
     if (token !== lyrics.token) return;
     // A preview is a short clip from inside the song, so timed lyrics wouldn't line up with it.
-    const isPreview = player.queue[player.index]?.source === 'preview';
+    const isPreview = hasOnlyPreview(player.queue[player.index]);
     if (found?.synced && !isPreview) {
       lyrics.lines = parseSynced(found.synced);
       lyrics.synced = lyrics.lines.length > 0;
@@ -894,9 +900,25 @@
     return row;
   }
 
-  function trackList(all, limit = 100) {
+  function trackList(all, pageSize = 100) {
     const tracks = all.filter((track) => !hiddenTracks.has(trackKey(track)));
-    return h('div', { class: 'track-list' }, ...tracks.slice(0, limit).map((track, index) => trackRow(track, tracks, index)));
+    const list = h('div', { class: 'track-list' });
+    let shown = 0;
+    const more = h('button', {
+      class: 'button small show-more',
+      text: 'Show more',
+      onclick: () => addPage(),
+    });
+    function addPage() {
+      more.remove();
+      tracks.slice(shown, shown + pageSize).forEach((track, offset) => list.append(trackRow(track, tracks, shown + offset)));
+      shown += pageSize;
+      if (shown < tracks.length) list.append(more);
+      renderPlayer();
+      refreshHearts();
+    }
+    addPage();
+    return list;
   }
 
   function albumCard(album, onOpen) {
@@ -1548,24 +1570,24 @@
   }
 
   async function saveImport(service, result, status) {
-    const playlists = saved.playlists.filter((list) => list.importedFrom !== service.id);
+    const recentName = t('Recently played on {service}', { service: service.name });
+    const replaced = new Set([...result.playlists.map((list) => list.name), ...(result.recents.length ? [recentName] : [])]);
+    const playlists = saved.playlists.filter((list) => list.importedFrom !== service.id || !replaced.has(list.name));
     const toTrack = (song) => ({ source: 'imported', id: `${song.artist}|${song.title}`, title: song.title, artist: song.artist, album: '', art: '', thumb: '', duration: 0 });
     result.playlists.forEach((list) => playlists.push({ id: crypto.randomUUID(), name: list.name, importedFrom: service.id, tracks: list.tracks.map(toTrack) }));
-    if (result.recents.length) playlists.push({ id: crypto.randomUUID(), name: t('Recently played on {service}', { service: service.name }), importedFrom: service.id, tracks: result.recents.map(toTrack) });
+    if (result.recents.length) playlists.push({ id: crypto.randomUUID(), name: recentName, importedFrom: service.id, tracks: result.recents.map(toTrack) });
     saved.playlists = playlists;
 
-    saved.follows = saved.follows.filter((artist) => artist.importedFrom !== service.id);
-    let followed = 0;
+    const earlier = saved.taste?.[service.id];
     const names = result.follows.slice(0, MAX_ARTIST_MATCHES);
     for (let i = 0; i < names.length; i++) {
       status.textContent = t('Finding artists: {done} of {total}', { done: i + 1, total: names.length });
       const artist = await api.matchArtist(names[i]).catch(() => null);
       if (artist && !isFollowing(artist)) {
         saved.follows.push({ id: artist.id, source: artist.source, name: artist.name, followers: artist.followers, thumb: artist.thumb, pic: artist.pic, importedFrom: service.id });
-        followed += 1;
       }
     }
-    saved.taste = { ...(saved.taste || {}), [service.id]: { topArtists: result.topArtists, songs: playlists.filter((list) => list.importedFrom === service.id).reduce((sum, list) => sum + list.tracks.length, 0), artists: followed, lists: playlists.filter((list) => list.importedFrom === service.id).length } };
+    saved.taste = { ...(saved.taste || {}), [service.id]: { topArtists: [...new Set([...result.topArtists, ...(earlier?.topArtists || [])])], songs: playlists.filter((list) => list.importedFrom === service.id).reduce((sum, list) => sum + list.tracks.length, 0), artists: saved.follows.filter((artist) => artist.importedFrom === service.id).length, lists: playlists.filter((list) => list.importedFrom === service.id).length } };
     storeSaved();
     loadForYou();
   }
@@ -1608,7 +1630,7 @@
     return h('div', { class: 'setting-group connector-card', 'data-service': service.id },
       h('div', { class: 'group-head' },
         h('h3', { raw: service.name }),
-        h('span', { class: `badge${taste ? ' lossless' : ''}`, text: taste ? 'Connected' : 'Not connected' })),
+        h('span', { class: `badge${taste ? ' lossless' : ''}`, text: taste ? 'Imported' : 'Not imported yet' })),
       taste ? h('p', { class: 'status-note', text: '{songs} songs, {lists} lists and {artists} artists imported.', values: taste }) : null,
       h('div', { class: 'actions' },
         h('button', { class: 'button primary', text: service.id === 'soundcloud' ? 'Choose a text file' : 'Choose your files', onclick: () => fileInput.click() }),
@@ -1669,13 +1691,21 @@
     'bad-file-type': 'That file type isn’t supported.',
     'daily-limit': 'You reached today’s limit of 10 songs.',
     'pick-again': 'Please choose the file again.',
+    'not-signed-in': 'Please sign in again.',
+    'not-allowed': 'This song can’t be downloaded.',
+    'Invalid login credentials': 'Wrong email or password.',
+    'Email not confirmed': 'Please confirm your email first. Check your inbox and spam.',
+    'User already registered': 'This email already has an account. Try signing in.',
+    'email rate limit exceeded': 'Too many emails were sent. Please try again in an hour.',
+    'too many reports right now': 'Too many reports right now. Please try again later.',
+    'Password should be at least 6 characters.': 'Enter your email and a password of at least 8 characters.',
     'terms-needed': 'Please accept the Terms and Privacy Policy.',
     'photo-too-big': 'That photo is over the 5 MB limit.',
     'reason-needed': 'Please say what is wrong with this song.',
   };
 
   function errorMessage(result) {
-    return ERRORS[result.error] || (result.error && /[A-Za-z]/.test(result.error) && !result.error.startsWith('not-') ? result.error : 'Something went wrong. Please try again.');
+    return t(ERRORS[result.error] || 'Something went wrong. Please try again.');
   }
 
   async function refreshAccount() {
@@ -2180,15 +2210,13 @@
       return h('div', { class: 'setting' }, h('label', { text: 'Language' }), h('div', { class: 'segmented' }, pick('auto', 'Auto'), pick('en', 'English'), pick('ru', 'Русский')), h('span'));
     };
     const sleepChoices = () => {
-      let chosen = 0;
       const buttons = [0, 15, 30, 60, 90].map((minutes) => {
         const button = h('button', {
           text: minutes ? '{n} min' : 'Off',
           values: { n: minutes },
-          class: minutes === 0 ? 'on' : '',
+          class: minutes === sleep.minutes ? 'on' : '',
           onclick: () => {
-            chosen = minutes;
-            setSleepTimer(chosen);
+            setSleepTimer(minutes);
             buttons.forEach((other) => other.classList.toggle('on', other === button));
           },
         });
@@ -2562,7 +2590,7 @@
         engine.lighten();
         // PCs without a separate graphics card may need blur-free glass to stay inside the limit.
         memoryTrims += 1;
-        if (memoryTrims >= 2 && !lightGlassForMemory) {
+        if (memoryTrims >= 2 && report.used > report.budget * LIGHT_GLASS_OVER_BUDGET && !lightGlassForMemory) {
           lightGlassForMemory = true;
           applySettings();
         }

@@ -564,3 +564,5 @@ textarea.field { display: block; max-width: 100%; height: auto; padding: 9px 13p
   filter: drop-shadow(0 0 12px rgba(var(--glow), 0.55));
 }
 html.calm .bc-lyrics p.current { color: #fff; background: none; }
+
+.show-more { display: block; margin: 12px auto 4px; }
