@@ -8,7 +8,7 @@
   const SESSION_KEY = 'solam.session';
   const AUDIO_TYPES = { mp3: 'audio/mpeg', flac: 'audio/flac', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg' };
   const PHOTO_TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-  const VIDEO_TYPES = { mp4: 'video/mp4', webm: 'video/webm' };
+  const VIDEO_TYPES = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' };
   const TRACK_FIELDS = 'id,user_id,title,genre,audio_path,art_path,duration,plays,status,created_at,lyrics,allow_download,check_notes,artists(name)';
   const ARTIST_FIELDS = 'id,name,genre,pic_path,cover_path';
 
@@ -110,17 +110,20 @@
     return { id: row.id, source: 'solam', name: row.name, genre: row.genre, followers: 0, trackCount: 0, pic, thumb: pic, cover: row.cover_path ? publicUrl(row.cover_path) : '', bio: '' };
   }
 
+  const toProfile = (row) => ({ pic: row?.pic_path ? publicUrl(row.pic_path) : '', cover: row?.cover_path ? publicUrl(row.cover_path) : '' });
+
   const list = async (query, token) => (await raw(`/rest/v1/tracks?select=${TRACK_FIELDS}&${query}`, { token })).map(toTrack);
   const safeTerm = (term) => String(term).replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim().slice(0, 60);
 
   async function getState() {
     if (!(await validToken().catch(() => null))) return { configured: true, user: null, artist: null, isAdmin: false, google: false };
     const token = session.access;
-    const [artists, admins] = await Promise.all([
+    const [artists, admins, profiles] = await Promise.all([
       raw(`/rest/v1/artists?id=eq.${session.user.id}&select=${ARTIST_FIELDS}`, { token }).catch(() => []),
       raw(`/rest/v1/admins?user_id=eq.${session.user.id}&select=user_id`, { token }).catch(() => []),
+      raw(`/rest/v1/profiles?id=eq.${session.user.id}&select=pic_path,cover_path`, { token }).catch(() => []),
     ]);
-    return { configured: true, user: session.user, artist: artists?.[0] ? toArtist(artists[0]) : null, isAdmin: Boolean(admins?.length), google: false };
+    return { configured: true, user: session.user, artist: artists?.[0] ? toArtist(artists[0]) : null, profile: toProfile(profiles?.[0]), isAdmin: Boolean(admins?.length), google: false };
   }
 
   // A browser only allows a file chooser straight after a tap, so this opens right away.
@@ -240,9 +243,12 @@
       const token = await requireToken();
       const column = { pic: 'pic_path', cover: 'cover_path' }[kind];
       if (!column) throw new Error('Bad image kind');
-      const rows = await raw(`/rest/v1/artists?id=eq.${session.user.id}&select=${column}`, { token });
+      // Artists show their pictures on their artist page, and everyone else keeps them on their profile.
+      const artists = await raw(`/rest/v1/artists?id=eq.${session.user.id}&select=${column}`, { token });
+      const rows = artists?.length ? artists : await raw(`/rest/v1/profiles?id=eq.${session.user.id}&select=${column}`, { token });
       const target = await putFile(token, fileId);
-      await json(`/rest/v1/artists?id=eq.${session.user.id}`, 'PATCH', { [column]: target }, {}, token);
+      if (artists?.length) await json(`/rest/v1/artists?id=eq.${session.user.id}`, 'PATCH', { [column]: target }, {}, token);
+      else await json('/rest/v1/profiles', 'POST', { id: session.user.id, [column]: target }, { Prefer: 'resolution=merge-duplicates' }, token);
       picked.delete(fileId);
       const previous = rows?.[0]?.[column];
       if (previous) await removeFiles([previous], token).catch(() => {});

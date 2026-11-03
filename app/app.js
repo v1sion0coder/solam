@@ -1950,7 +1950,7 @@
   ];
   const PERKS = [
     ['Unlimited downloads', 'Keep as many songs offline as you want, where artists allow it. Free accounts keep 10.'],
-    ['Animated profile', 'Video profile pictures and banners.'],
+    ['Animated profile', 'Animated profile pictures and banners: GIF or video.'],
     ['Bigger uploads', 'Upload 30 songs a day instead of 10.'],
   ];
   const COMING_PERKS = [
@@ -2019,7 +2019,7 @@
 
   /* ---------- account ---------- */
 
-  const account = { configured: false, user: null, artist: null, isAdmin: false, google: false };
+  const account = { configured: false, user: null, artist: null, profile: null, isAdmin: false, google: false };
   const ERRORS = {
     'under-age': 'You must be 13 or older to upload music.',
     'rights-needed': 'Please confirm that you own this music.',
@@ -2089,6 +2089,7 @@
               renderAccount();
             },
           }))),
+        profileSection(),
         reviewBox,
         deleteAccountBox());
       if (account.isAdmin) renderReview(reviewBox);
@@ -2339,23 +2340,24 @@
           button.disabled = true;
           const result = await api.server('uploadImage', kind, picked.value.id);
           button.disabled = false;
-          if (result.ok) renderUpload();
-          else toast(errorMessage(result));
+          if (!result.ok) toast(errorMessage(result));
+          else if (activePage === 'account') renderAccount();
+          else renderUpload();
         },
       });
       return button;
     };
-    const { artist } = account;
+    const artist = account.artist || { ...account.profile, name: saved.displayName || account.user?.email?.split('@')[0] || '' };
     return h('div', { class: 'setting-group' },
-      h('h3', { text: 'Your artist profile' }),
+      h('h3', { text: account.artist ? 'Your artist profile' : 'Your profile' }),
       h('div', { class: 'profile-preview' },
         artist.cover ? profileMedia(artist.cover, 'banner-image') : null,
         artist.pic ? profileMedia(artist.pic, 'profile-pic') : h('div', { class: 'profile-pic blank round', raw: artist.name.charAt(0).toUpperCase() }),
         h('strong', { raw: artist.name })),
-      h('p', { class: 'status-note', text: 'Photos only: JPG, PNG or WEBP, up to 5 MB.' }),
+      h('p', { class: 'status-note', text: premium.active ? 'Photos: JPG, PNG or WEBP, up to 5 MB. Animated: GIF, MP4 or WEBM, up to 50 MB.' : 'Photos only: JPG, PNG or WEBP, up to 5 MB.' }),
       h('div', { class: 'actions' }, change('pic', 'Change profile picture'), change('cover', 'Change banner')),
       premium.active
-        ? h('div', { class: 'actions' }, change('pic', 'Use a video picture', 'video'), change('cover', 'Use a video banner', 'video'))
+        ? h('div', { class: 'actions' }, change('pic', 'Use an animated picture', 'video'), change('cover', 'Use an animated banner', 'video'))
         : h('button', { class: 'locked-row', onclick: () => showPage('premium') }, icon('premium'), h('span', { text: 'Animated (video) picture and banner: Premium.' })));
   }
 
@@ -3303,7 +3305,12 @@
 
   function profileMedia(url, className) {
     if (/\.(mp4|webm)$/i.test(url)) {
-      return h('video', { class: className, src: url, autoplay: 'autoplay', muted: 'muted', loop: 'loop', playsinline: 'playsinline' });
+      const video = h('video', { class: className, loop: 'loop', playsinline: 'playsinline' });
+      // Browsers only start a video by themselves when it is silent, and this must be set before it loads.
+      video.muted = true;
+      video.autoplay = true;
+      video.src = url;
+      return video;
     }
     return h('img', { class: className, src: url, alt: '', decoding: 'async' });
   }
