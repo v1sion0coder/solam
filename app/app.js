@@ -1938,8 +1938,8 @@
 
   /* ---------- premium ---------- */
 
-  const premium = { active: false, until: null, provider: null, settings: { checkoutUrl: null, manageUrl: null, price: '$3.99' } };
-  const premiumOnSale = () => Boolean(premium.settings.checkoutUrl);
+  const premium = { active: false, until: null, provider: null, request: null, settings: { checkoutUrl: null, manageUrl: null, price: '$3.99', bankOn: false } };
+  const premiumOnSale = () => Boolean(premium.settings.checkoutUrl || premium.settings.bankOn);
   // Until Premium goes on sale nobody can buy it, so its features stay free for everyone.
   const hasPremium = () => premium.active || !premiumOnSale();
   const transitionsOn = () => settings.crossfadeOn;
@@ -1962,9 +1962,11 @@
   ];
 
   async function refreshPremium() {
-    const [state, config] = await Promise.all([api.server('premiumState'), api.server('appSettings')]);
+    const [state, config, request] = await Promise.all([api.server('premiumState'), api.server('appSettings'), api.server('myPremiumRequest')]);
     if (state.ok) Object.assign(premium, state.value);
     if (config.ok) premium.settings = config.value;
+    premium.request = request.ok ? request.value : null;
+    celebrateNewPremium();
     document.body.classList.toggle('has-premium', premium.active);
     if (activePage === 'premium') renderPremium();
   }
@@ -1990,10 +1992,18 @@
   function renderPremium() {
     const until = premium.until ? new Date(premium.until).toLocaleDateString(window.solamLanguage) : '';
     let status;
+    const bank = !premium.settings.checkoutUrl && premium.settings.bankOn;
+    const waiting = premium.request?.paid_at;
     if (premium.active) {
       status = h('div', {},
         h('p', { class: 'page-sub', text: 'You have Premium until {date}. Thank you for supporting Solam!', values: { date: until } }),
-        premium.settings.manageUrl && premium.provider !== 'gift' ? h('button', { class: 'button', text: 'Manage or cancel', onclick: () => api.openLink(premium.settings.manageUrl) }) : null);
+        premium.settings.manageUrl && premium.provider === 'lemonsqueezy' ? h('button', { class: 'button', text: 'Manage or cancel', onclick: () => api.openLink(premium.settings.manageUrl) }) : null,
+        bank ? h('button', { class: 'button', text: waiting ? 'Waiting for your payment' : 'Add another month', onclick: showBankPayment }) : null);
+    } else if (bank) {
+      status = h('div', {},
+        h('p', { class: 'page-sub', text: '{price} for one month. It never renews by itself.', values: { price: premium.settings.price } }),
+        h('button', { class: 'button primary soon', text: waiting ? 'Waiting for your payment' : 'Get Premium', onclick: showBankPayment }),
+        h('p', { class: 'status-note', text: 'Paid by bank transfer, then switched on by hand, usually within a day.' }));
     } else if (premiumOnSale()) {
       status = h('div', {},
         h('p', { class: 'page-sub', text: '{price} a month. Cancel any time.', values: { price: premium.settings.price } }),
@@ -2041,6 +2051,8 @@
     'photo-too-big': 'That photo is over the 5 MB limit.',
     'reason-needed': 'Please say what is wrong with this song.',
     'comment-empty': 'Write something first.',
+    'bank-details-incomplete': 'Enter a full IBAN, the name on the account, and a price.',
+    'too many payment requests': 'Too many payment attempts today. Please try again tomorrow.',
     'comment name taken': 'An artist already uses that name. Choose another.',
     'too many comments': 'You’re commenting too fast. Please try again in a few minutes.',
     'message-too-short': 'Please write a little more.',
@@ -2234,6 +2246,8 @@
     renderReports(reportsBox);
     const adminBox = h('div', {});
     renderAdminTools(adminBox);
+    const paymentBox = h('div', {});
+    renderPaymentAdmin(paymentBox);
     box.replaceChildren(
       h('h2', { class: 'section-title', text: 'Review songs' }),
       h('p', { class: 'status-note', text: 'Every upload waits here until you approve it.' }),
@@ -2252,6 +2266,7 @@
           h('button', { class: 'button small primary', text: 'Approve', onclick: () => decide('approved') }),
           h('button', { class: 'button small', text: 'Reject', onclick: () => decide('rejected') }));
       }),
+      paymentBox,
       reportsBox,
       adminBox);
   }
@@ -2874,6 +2889,8 @@
   }
 
   function drawQr(canvas, value, size) {
+    // Names in bank codes can have letters outside English.
+    if (window.qrcode.stringToBytesFuncs?.['UTF-8']) window.qrcode.stringToBytes = window.qrcode.stringToBytesFuncs['UTF-8'];
     const code = window.qrcode(0, 'M');
     code.addData(value);
     code.make();
@@ -3379,6 +3396,156 @@
       ...(support.ok ? support.value : []).map((item) => h('div', { class: 'review-row' },
         h('div', { class: 'track-text wrap' }, h('strong', { raw: item.contact || t('No email given') }), h('span', { raw: item.body })),
         h('button', { class: 'button small', text: 'Done', onclick: async () => { await api.server('clearSupport', item.id); renderAdminTools(box); } }))));
+  }
+
+  /* ---------- paying by bank transfer ---------- */
+
+  const formatIban = (iban) => String(iban).replace(/(.{4})/g, '$1 ').trim();
+
+  // The standard code European banking apps can scan, which fills in the whole transfer.
+  function bankQrText(details, code) {
+    return ['BCD', '002', '1', 'SCT', '', details.account_name, details.iban, `EUR${Number(details.amount).toFixed(2)}`, '', '', code].join('\n');
+  }
+
+  function copyRow(label, value, shown = value) {
+    const button = h('button', {
+      class: 'pay-copy',
+      title: 'Copy',
+      'aria-label': label,
+      onclick: async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          button.classList.add('copied');
+          setTimeout(() => button.classList.remove('copied'), 1400);
+        } catch {
+          toast('Couldn’t copy that. Please copy it by hand.');
+        }
+      },
+    }, h('small', { text: label }), h('strong', { raw: shown }), h('span', { class: 'pay-copy-state', text: 'Copy' }), h('span', { class: 'pay-copied', text: 'Copied' }));
+    return button;
+  }
+
+  async function showBankPayment() {
+    if (!account.user) {
+      toast('Sign in first, so Premium goes to your account.');
+      showPage('account');
+      return;
+    }
+    const body = openSheet('Get Premium', h('div', { class: 'pay-loading' }, h('i'), h('i'), h('i')));
+    const [details, existing] = await Promise.all([api.server('paymentDetails'), api.server('myPremiumRequest')]);
+    let request = existing.ok ? existing.value : null;
+    if (!request) {
+      const started = await api.server('startPremiumRequest');
+      if (!started.ok) {
+        toast(errorMessage(started));
+        closeSheet();
+        return;
+      }
+      request = started.value;
+    }
+    if (!details.ok || !details.value?.iban || !request) {
+      toast('Something went wrong. Please try again.');
+      closeSheet();
+      return;
+    }
+    premium.request = request;
+    const showWaiting = () => {
+      body.replaceChildren(h('div', { class: 'pay-step pay-waiting' },
+        h('span', { class: 'pay-orbit' }, h('i'), h('i'), h('i'), icon('premium')),
+        h('h3', { text: 'Waiting for your payment' }),
+        h('p', { class: 'status-note', text: 'Transfers can take up to a day or two. Premium switches on by itself once your payment is checked. You can close this.' }),
+        copyRow('Your code', request.code),
+        h('div', { class: 'actions' }, h('button', { class: 'button', text: 'Close', onclick: closeSheet }))));
+    };
+    if (request.paid_at) {
+      showWaiting();
+      return;
+    }
+    const value = details.value;
+    const qr = h('canvas', { class: 'qr-code pay-qr', 'aria-label': 'QR code' });
+    const paid = h('button', {
+      class: 'button primary pay-done',
+      text: 'I’ve paid',
+      onclick: async () => {
+        paid.disabled = true;
+        const done = await api.server('markPremiumPaid', request.id);
+        paid.disabled = false;
+        if (!done.ok) {
+          toast(errorMessage(done));
+          return;
+        }
+        request.paid_at = new Date().toISOString();
+        showWaiting();
+        if (activePage === 'premium') renderPremium();
+      },
+    });
+    body.replaceChildren(h('div', { class: 'pay-step' },
+      h('div', { class: 'pay-amount' }, h('strong', { raw: premium.settings.price }), h('span', { text: 'for one month of Premium' })),
+      h('p', { class: 'status-note pay-hint', text: 'Scan this with your banking app, or copy the details below.' }),
+      qr,
+      copyRow('IBAN', value.iban, formatIban(value.iban)),
+      copyRow('Name', value.account_name),
+      copyRow('Amount', Number(value.amount).toFixed(2), premium.settings.price),
+      copyRow('Payment reference', request.code),
+      h('p', { class: 'pay-warning', text: 'Always include the payment reference. It’s how your payment reaches your account.' }),
+      paid));
+    drawQr(qr, bankQrText(value, request.code), 420);
+  }
+
+  const CELEBRATED_KEY = 'solam.premiumCelebrated';
+
+  function celebrateNewPremium() {
+    if (!premium.active || !premium.until || premium.provider === 'lemonsqueezy') return;
+    let seen = null;
+    try {
+      seen = localStorage.getItem(CELEBRATED_KEY);
+      localStorage.setItem(CELEBRATED_KEY, premium.until);
+    } catch {
+      return;
+    }
+    if (seen === premium.until) return;
+    const pieces = Array.from({ length: 34 }, (_, i) => h('i', { style: `--x:${(i * 37) % 100}%;--d:${(i * 53) % 700}ms;--h:${(i * 47) % 360}` }));
+    const overlay = h('div', { id: 'celebrate', role: 'status', onclick: () => overlay.remove() }, ...pieces,
+      h('div', { class: 'celebrate-card glass' },
+        h('span', { class: 'premium-star' }, icon('premium')),
+        h('h1', { class: 'page-title', text: 'Premium is on!' }),
+        h('p', { class: 'page-sub', text: 'Thank you for supporting Solam.' })));
+    document.body.append(overlay);
+    setTimeout(() => overlay.remove(), 4200);
+  }
+
+  async function renderPaymentAdmin(box) {
+    const [details, requests] = await Promise.all([api.server('paymentDetails'), api.server('premiumRequests')]);
+    const value = details.ok && details.value ? details.value : {};
+    const iban = h('input', { class: 'field', autocomplete: 'off', maxlength: 42, placeholder: 'LT00 0000 0000 0000 0000', 'aria-label': 'Your IBAN', value: value.iban ? formatIban(value.iban) : '' });
+    const name = h('input', { class: 'field', autocomplete: 'off', maxlength: 70, 'aria-label': 'Name on the account', value: value.account_name || '' });
+    const amount = h('input', { class: 'field', inputmode: 'decimal', maxlength: 8, 'aria-label': 'Price in euros', value: value.amount ? String(value.amount) : '3.99' });
+    const save = async (enabled) => {
+      const result = await api.server('saveBankDetails', { iban: iban.value, accountName: name.value, amount: amount.value, enabled });
+      toast(result.ok ? (enabled ? 'Premium is on sale.' : 'Premium is off sale.') : errorMessage(result));
+      if (result.ok) {
+        await refreshPremium();
+        renderPaymentAdmin(box);
+      }
+    };
+    const list = requests.ok ? requests.value : [];
+    box.replaceChildren(
+      h('h2', { class: 'section-title', text: 'Premium payments' }),
+      list.length ? null : h('p', { class: 'empty', text: 'No payments are waiting.' }),
+      ...list.map((item) => h('div', { class: 'review-row pay-request' },
+        h('div', { class: 'track-text wrap' }, h('strong', { raw: item.code }), h('span', { raw: item.email })),
+        h('button', { class: 'button small primary', text: 'Activate 1 month', onclick: async () => { const r = await api.server('decidePremiumRequest', item.id, true, 31); if (!r.ok) toast(errorMessage(r)); renderPaymentAdmin(box); } }),
+        h('button', { class: 'button small', text: 'Not paid', onclick: async () => { const r = await api.server('decidePremiumRequest', item.id, false, 0); if (!r.ok) toast(errorMessage(r)); renderPaymentAdmin(box); } }))),
+      h('p', { class: 'status-note', text: 'Check your bank for the code before you press Activate.' }),
+      h('div', { class: 'setting-group' },
+        h('h3', { text: 'Your bank details' }),
+        h('p', { class: 'notice', text: 'Everyone who opens the payment screen will see this IBAN and name, and paying can show them your real name.' }),
+        labelled('Your IBAN', '', iban),
+        labelled('Name on the account', '', name),
+        labelled('Price in euros', '', amount),
+        h('div', { class: 'actions' },
+          h('button', { class: 'button primary', text: premium.settings.bankOn ? 'Save' : 'Put Premium on sale', onclick: () => save(true) }),
+          premium.settings.bankOn ? h('button', { class: 'button', text: 'Take off sale', onclick: () => save(false) }) : null)));
   }
 
   /* ---------- glass bending on iPhone ---------- */

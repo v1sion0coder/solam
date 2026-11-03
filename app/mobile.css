@@ -85,7 +85,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: 1; pointer-event
 .perks { grid-template-columns: minmax(0, 1fr); }
 .pop-menu { max-width: calc(100vw - 24px); max-height: min(420px, 70dvh); }
 .pop-menu > button { padding: 10px; }
-.glass.sheet-panel { background: linear-gradient(145deg, rgba(var(--tint-rgb), 0.93), rgba(var(--tint-rgb), 0.98)); }
+.glass.sheet-panel { background: linear-gradient(145deg, rgb(var(--tint-rgb)), rgb(var(--tint-rgb))), #0a0c1c; }
 #toast { width: calc(100% - 32px); max-width: none; bottom: calc(var(--tabs) + 72px); }
 
 /* Sheets rise from the bottom of the screen. */

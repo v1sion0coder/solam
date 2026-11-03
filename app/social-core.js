@@ -4,7 +4,7 @@
   else root.SolamSocial = factory();
 })(typeof self !== 'undefined' ? self : this, () => {
   const FREE = { active: false, until: null, status: null, provider: null };
-  const DEFAULT_SETTINGS = { checkoutUrl: null, manageUrl: null, price: '$3.99' };
+  const DEFAULT_SETTINGS = { checkoutUrl: null, manageUrl: null, price: '$3.99', bankOn: false };
   const COMMENT_FIELDS = 'id,track_key,user_id,author,body,created_at';
   const PLAYLIST_FIELDS = 'id,owner,name,tracks,updated_at,shared_playlist_members(user_id)';
   const CHECKOUT_LINK = /^https:\/\/[a-z0-9-]+\.lemonsqueezy\.com\//;
@@ -21,11 +21,11 @@
     return {
       // Older servers don't have these tables yet, so they simply report that Premium isn't on sale.
       async appSettings() {
-        const rows = await raw('/rest/v1/app_settings?id=eq.1&select=premium_checkout_url,premium_manage_url,premium_price').catch(() => null);
+        const rows = await raw('/rest/v1/app_settings?id=eq.1&select=premium_checkout_url,premium_manage_url,premium_price,bank_enabled').catch(() => null);
         if (!rows?.[0]) return { ...DEFAULT_SETTINGS };
         const checkoutUrl = CHECKOUT_LINK.test(rows[0].premium_checkout_url || '') ? rows[0].premium_checkout_url : null;
         const manageUrl = CHECKOUT_LINK.test(rows[0].premium_manage_url || '') ? rows[0].premium_manage_url : null;
-        return { checkoutUrl, manageUrl, price: rows[0].premium_price || DEFAULT_SETTINGS.price };
+        return { checkoutUrl, manageUrl, price: rows[0].premium_price || DEFAULT_SETTINGS.price, bankOn: rows[0].bank_enabled === true };
       },
       async saveAppSettings({ checkoutUrl, manageUrl, price }) {
         await json('/rest/v1/app_settings?id=eq.1', 'PATCH', { premium_checkout_url: checkoutUrl || null, premium_manage_url: manageUrl || null, premium_price: String(price || DEFAULT_SETTINGS.price).slice(0, 20) }, {}, await requireToken());
@@ -38,6 +38,31 @@
         if (!row) return { ...FREE };
         return { active: new Date(row.active_until).getTime() > Date.now(), until: row.active_until, status: row.status, provider: row.provider };
       },
+      async paymentDetails() {
+        const rows = await raw('/rest/v1/payment_details?id=eq.1&select=iban,account_name,amount', { token: await requireToken() });
+        return rows?.[0] || null;
+      },
+      async saveBankDetails({ iban, accountName, amount, enabled }) {
+        const token = await requireToken();
+        const clean = String(iban || '').replace(/\s+/g, '').toUpperCase();
+        const sum = Number(String(amount).replace(',', '.'));
+        if (enabled && (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/.test(clean) || !String(accountName || '').trim() || !(sum > 0))) throw new Error('bank-details-incomplete');
+        await json('/rest/v1/payment_details?id=eq.1', 'PATCH', { iban: clean || null, account_name: String(accountName || '').trim().slice(0, 70) || null, amount: sum > 0 ? sum : 3.99 }, {}, token);
+        await json('/rest/v1/app_settings?id=eq.1', 'PATCH', { bank_enabled: enabled === true, premium_price: sum > 0 ? `€${sum.toFixed(2)}` : DEFAULT_SETTINGS.price }, {}, token);
+      },
+      async myPremiumRequest() {
+        const token = await optionalToken();
+        if (!token) return null;
+        const rows = await raw(`/rest/v1/premium_requests?user_id=eq.${userId()}&status=eq.pending&select=id,code,paid_at&order=created_at.desc&limit=1`, { token }).catch(() => null);
+        return rows?.[0] || null;
+      },
+      async startPremiumRequest() {
+        const rows = await json('/rest/v1/premium_requests', 'POST', {}, { Prefer: 'return=representation' }, await requireToken());
+        return rows?.[0] || null;
+      },
+      markPremiumPaid: async (id) => json('/rest/v1/rpc/mark_premium_paid', 'POST', { request: uuid(id) }, {}, await requireToken()),
+      premiumRequests: async () => json('/rest/v1/rpc/list_premium_requests', 'POST', {}, {}, await requireToken()),
+      decidePremiumRequest: async (id, approve, days) => json('/rest/v1/rpc/decide_premium_request', 'POST', { request: uuid(id), approve: approve === true, days: Number(days) }, {}, await requireToken()),
       grantPremium: async (email, days) => json('/rest/v1/rpc/grant_premium', 'POST', { target_email: String(email), days: Number(days) }, {}, await requireToken()),
 
       newTracks: () => list('status=eq.approved&order=created_at.desc&limit=12'),

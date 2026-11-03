@@ -761,3 +761,52 @@ html.calm #welcome *, html.calm #welcome, html.calm body.wt-reveal * { animation
 .stats-top { margin-top: 14px; }
 
 button.banner-image, video.banner-image { pointer-events: none; }
+
+/* Paying for Premium */
+.pay-step > * { animation: wt-enter 0.6s cubic-bezier(.16, 1, .3, 1) both; }
+.pay-step > :nth-child(2) { animation-delay: 0.05s; }
+.pay-step > :nth-child(3) { animation-delay: 0.1s; }
+.pay-step > :nth-child(4) { animation-delay: 0.15s; }
+.pay-step > :nth-child(5) { animation-delay: 0.2s; }
+.pay-step > :nth-child(6) { animation-delay: 0.25s; }
+.pay-step > :nth-child(7) { animation-delay: 0.3s; }
+.pay-step > :nth-child(8) { animation-delay: 0.35s; }
+.pay-amount { text-align: center; padding: 4px 0 6px; }
+.pay-amount strong { display: block; font: 700 42px/1.1 "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background: linear-gradient(100deg, #ffe6a0, #ff9a5a, #ff5c8a, #ffe6a0); background-size: 240% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; animation: pay-shimmer 5s linear infinite; }
+@keyframes pay-shimmer { to { background-position: -240% 0; } }
+.pay-amount span { color: var(--ink-soft); font-size: 13px; }
+.pay-hint { text-align: center; }
+.pay-qr { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4), 0 12px 40px rgba(var(--glow), 0.45); }
+.pay-copy { position: relative; display: block; width: 100%; margin-bottom: 7px; padding: 8px 74px 8px 13px; border-radius: 13px; text-align: left; background: rgba(255, 255, 255, 0.09); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22); transition: background 0.18s, transform 0.18s cubic-bezier(.34, 1.56, .64, 1); }
+.pay-copy:hover { background: rgba(255, 255, 255, 0.15); }
+.pay-copy:active { transform: scale(0.985); }
+.pay-copy small { display: block; color: var(--ink-faint); font-size: 11px; }
+.pay-copy strong { display: block; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; user-select: text; }
+.pay-copy-state, .pay-copied { position: absolute; top: 50%; right: 13px; color: var(--ink-soft); font-size: 12px; transform: translateY(-50%); transition: opacity 0.2s, transform 0.28s cubic-bezier(.34, 1.56, .64, 1); }
+.pay-copied { color: #9ff5cf; font-weight: 600; opacity: 0; transform: translateY(-50%) scale(0.7); }
+.pay-copy.copied .pay-copy-state { opacity: 0; }
+.pay-copy.copied .pay-copied { opacity: 1; transform: translateY(-50%); }
+.pay-warning { margin: 4px 2px 12px; color: #ffe6a0; font-size: 12.5px; }
+.pay-done { display: block; width: 100%; height: 48px; border-radius: 24px; font-size: 16px; }
+.pay-loading { display: flex; justify-content: center; gap: 8px; padding: 50px 0; }
+.pay-loading i { width: 10px; height: 10px; border-radius: 50%; background: #fff; animation: pay-dot 0.9s ease-in-out infinite alternate; }
+.pay-loading i:nth-child(2) { animation-delay: 0.15s; }
+.pay-loading i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pay-dot { from { opacity: 0.25; transform: translateY(5px); } }
+.pay-waiting { text-align: center; padding-top: 8px; }
+.pay-waiting h3 { margin: 16px 0 6px; font-size: 19px; }
+.pay-waiting .actions { justify-content: center; }
+.pay-orbit { position: relative; display: grid; place-items: center; width: 96px; height: 96px; margin: 0 auto; color: #ffe6a0; }
+.pay-orbit svg { width: 42px; height: 42px; animation: wt-float 3s ease-in-out infinite; }
+.pay-orbit i { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid rgba(255, 230, 160, 0.6); animation: wt-ring 2.7s cubic-bezier(.2, .6, .3, 1) infinite; }
+.pay-orbit i:nth-child(2) { animation-delay: 0.9s; }
+.pay-orbit i:nth-child(3) { animation-delay: 1.8s; }
+.pay-request { flex-wrap: wrap; }
+
+#celebrate { position: fixed; inset: 0; z-index: 72; display: grid; place-items: center; overflow: hidden; background: rgba(4, 6, 16, 0.5); animation: wt-fade 0.35s ease-out both, wt-fade-out 0.5s ease-in 3.7s both; }
+#celebrate > i { position: absolute; top: -24px; left: var(--x); width: 9px; height: 15px; border-radius: 3px; background: hsl(var(--h), 92%, 68%); animation: celebrate-fall 2.8s cubic-bezier(.25, .6, .4, 1) var(--d) both; }
+@keyframes celebrate-fall { to { transform: translateY(110vh) rotate(720deg); } }
+.celebrate-card { width: min(380px, calc(100% - 40px)); padding: 28px 24px; text-align: center; background: linear-gradient(145deg, rgba(var(--tint-rgb), 0.9), rgba(var(--tint-rgb), 0.97)); animation: wt-rise 0.8s cubic-bezier(.16, 1, .3, 1) both; }
+.celebrate-card .page-sub { margin: 6px auto 0; }
+html.calm #celebrate > i { display: none; }
+@media (prefers-reduced-motion: reduce) { #celebrate > i { display: none; } }
