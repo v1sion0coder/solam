@@ -40,7 +40,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: 1; pointer-event
 .np-text { flex: 1 1 auto; min-width: 0; }
 .np-text strong { font-size: 14px; }
 .np-center { flex: none; min-width: 0; }
-.np-time, #np-prev, .np-tools { display: none; }
+.np-time, #np-prev, #np-shuffle, #np-repeat, .np-tools { display: none; }
 #np-heart { width: 34px; height: 34px; flex: none; }
 .np-controls { gap: 2px; }
 .icon-button.big { width: 40px; height: 40px; }
@@ -114,7 +114,7 @@ body.big .np-text { flex-basis: calc(100% - 110px); }
 body.big #np-art { display: none; }
 body.big .np-center { order: 3; width: 100%; flex-basis: 100%; }
 body.big .np-time { display: flex; max-width: none; }
-body.big #np-prev { display: grid; }
+body.big #np-prev, body.big #np-shuffle, body.big #np-repeat { display: grid; }
 body.big.idle #player { opacity: 1; transform: none; }
 
 /* A phone on its side has little height, so the glass shrinks to fit. */

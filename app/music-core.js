@@ -8,6 +8,15 @@
   const CATALOG_API = 'https://api.deezer.com';
   const JUNK_UPLOAD = /slowed|reverb|sped up|nightcore|karaoke|tribute|originally performed|in the style of|8d audio|spotidown|\.app\b|type beat/;
   const HIDDEN_ACCOUNTS = new Set(['audius']);
+  const FREE_CATALOG = 'https://v1sion0coder.github.io/solam/free-catalog.json';
+  // Only licenses that allow sharing in an app with paid features. Non-commercial music is left out.
+  const OPEN_LICENSE = /creativecommons\.org\/(licenses\/(by|by-sa)\/|publicdomain\/)/i;
+  const ARCHIVE_OPEN_LICENSES = `licenseurl:(${['by/2.0', 'by/2.5', 'by/3.0', 'by/4.0', 'by-sa/2.0', 'by-sa/2.5', 'by-sa/3.0', 'by-sa/4.0'].map((id) => `"http://creativecommons.org/licenses/${id}/"`).concat('"http://creativecommons.org/publicdomain/zero/1.0/"', '"http://creativecommons.org/publicdomain/mark/1.0/"').join(' OR ')})`;
+
+  function licenseName(url) {
+    const match = /licenses\/([a-z-]+)\/([\d.]+)/i.exec(url);
+    return match ? `CC ${match[1].toUpperCase()} ${match[2]}` : 'Public domain';
+  }
 
   function createMusic({ fetchJson, fetchCatalogJson = fetchJson, getBackend }) {
     function cleanText(value) {
@@ -250,10 +259,12 @@
 
     async function searchArchive(term) {
       const safeTerm = term.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim();
-      const query = `(${safeTerm || 'music'}) AND mediatype:audio AND collection:(etree OR netlabels)`;
-      const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=creator&sort[]=downloads+desc&rows=30&output=json`;
+      const query = `(${safeTerm || 'music'}) AND mediatype:audio AND collection:(netlabels OR opensource_audio) AND ${ARCHIVE_OPEN_LICENSES}`;
+      const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&sort[]=downloads+desc&rows=30&output=json`;
       const data = await fetchJson(url);
-      return (data?.response?.docs || []).map((doc) => ({
+      return (data?.response?.docs || []).filter((doc) => OPEN_LICENSE.test(String(doc.licenseurl))).map((doc) => ({
+        license: licenseName(String(doc.licenseurl)),
+        licenseUrl: String(doc.licenseurl).replace(/^http:/, 'https:'),
         id: doc.identifier,
         title: Array.isArray(doc.title) ? doc.title[0] : doc.title || doc.identifier,
         artist: (Array.isArray(doc.creator) ? doc.creator[0] : doc.creator) || 'Unknown artist',
@@ -273,9 +284,15 @@
       const files = data?.files || [];
       const pick = (test) => files.filter((file) => test(String(file.format || '')));
       const flac = pick((format) => /flac/i.test(format));
-      const chosen = flac.length ? flac : pick((format) => /mp3/i.test(format));
+      // Each song is stored in several formats, so one is chosen to avoid listing it more than once.
+      const mp3 = pick((format) => /mp3/i.test(format) && !/64kbps/i.test(format));
+      const originals = mp3.filter((file) => file.source === 'original');
+      const chosen = flac.length ? flac : originals.length ? originals : mp3;
       const creator = data?.metadata?.creator;
+      const licenseUrl = String([data?.metadata?.licenseurl].flat()[0] || '');
+      const license = OPEN_LICENSE.test(licenseUrl) ? { license: licenseName(licenseUrl), licenseUrl: licenseUrl.replace(/^http:/, 'https:') } : {};
       return chosen.map((file) => ({
+        ...license,
         title: file.title || file.name.replace(/\.[^.]+$/, ''),
         artist: (Array.isArray(creator) ? creator[0] : creator) || 'Unknown artist',
         album: data?.metadata?.title || '',
@@ -333,6 +350,8 @@
       return null;
     }
 
+
+    const freeAlbums = async () => (await fetchJson(FREE_CATALOG))?.albums || [];
 
     const trending = () => fetchOnlineTracks('/tracks/trending?limit=12');
 
@@ -398,7 +417,7 @@
 
     return {
       searchAll, searchArtists, loadArtist, trending, similar, topArtists, previewUrl, matchSong, matchArtist, artistTop,
-      searchArchive, loadArchiveAlbum, loadLyrics, offlineDownloadUrl,
+      freeAlbums, searchArchive, loadArchiveAlbum, loadLyrics, offlineDownloadUrl,
     };
   }
 

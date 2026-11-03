@@ -48,6 +48,7 @@
     extraMotion: true,
     language: 'auto',
     welcomed: false,
+    seenNews: '',
   };
   const THEMES = [
     ['aurora', 'Aurora', [8, 34, 50]],
@@ -78,6 +79,7 @@
   const PREVIEW_VOLUME_SCALE = 0.55;
   const SITE = 'https://v1sion0coder.github.io/solam/';
   const FREE_DOWNLOADS = 10;
+  const WHATS_NEW_VERSION = '0.9.11';
   const FREE_FADE_SECONDS = 2;
   const MIX_TICK_MS = 250;
   const SILENCE_LEVEL = 0.006;
@@ -104,6 +106,8 @@
     bell: 'M12 22a2.500 2.500 0 0 0 2.400-2h-4.800A2.500 2.500 0 0 0 12 22zm7-6v-5a7 7 0 0 0-5.500-6.800V3.500a1.500 1.500 0 0 0-3 0v.700A7 7 0 0 0 5 11v5l-2 2v1h18v-1z',
     menu: 'M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z',
     share: 'M18 16a3 3 0 0 0-2.200 1l-7-4a3 3 0 0 0 0-2l7-4A3 3 0 1 0 15 5v.3l-7 4a3 3 0 1 0 0 5.400l7 4V19a3 3 0 1 0 3-3z',
+    repeat: 'M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z',
+    shuffle: 'M10.6 9.2 5.400 4 4 5.400l5.200 5.200zM14.500 4l2 2L4 18.600 5.400 20 17.900 7.500l2 2V4zm.300 9.400-1.400 1.400 3.100 3.100-2 2H20v-5.500l-2 2z',
     close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z',
     down: 'M6.4 8.4 12 14l5.6-5.6L19 9.8l-7 7-7-7z',
     artists: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6zM18 11a3 3 0 0 0 0-6v6zm1.5 2.2c1.5.9 2.5 2.5 2.5 4.3h-1.5c0-1.6-.8-3-2.2-3.8zM6 11V5a3 3 0 0 0 0 6zm-1.5 2.2-.8.5C2.3 14.5 1.5 15.9 1.5 17.5H0c0-1.8 1-3.4 2.5-4.3z',
@@ -353,7 +357,7 @@
   /* ---------- player ---------- */
 
   const NOTHING = { source: null, title: '', artist: '', album: '', art: '', pos: 0, dur: 0, playing: false, badge: '', lossless: false };
-  const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0 };
+  const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0, repeat: 'off', shuffle: false, unshuffled: null };
   const fade = { timer: 0, active: false, from: null, to: null };
   const sleep = { timer: 0, ends: 0, minutes: 0 };
 
@@ -462,7 +466,7 @@
     const reallyPlaying = !audio.seeking && audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
     mix.quietTicks = loudness < SILENCE_LEVEL && reallyPlaying ? mix.quietTicks + 1 : 0;
     const left = (Number.isFinite(audio.duration) ? audio.duration : 0) - audio.currentTime;
-    if (mix.quietTicks >= SILENT_TICKS_TO_MOVE_ON && left > 0.5 && left < SILENCE_CHECK_LAST_SECONDS && !fade.active && settings.crossfadeOn && player.queue[player.index + 1]) {
+    if (mix.quietTicks >= SILENT_TICKS_TO_MOVE_ON && left > 0.5 && left < SILENCE_CHECK_LAST_SECONDS && !fade.active && settings.crossfadeOn && player.repeat === 'off' && player.queue[player.index + 1]) {
       mix.quietTicks = 0;
       player.index += 1;
       loadCurrent(Math.min(2, transitionSeconds()));
@@ -515,7 +519,64 @@
   function playQueue(queue, index) {
     player.queue = [...queue];
     player.index = index;
+    player.unshuffled = null;
+    if (player.shuffle) shuffleUpcoming();
+    if (player.repeat === 'once') setRepeat('off');
     loadCurrent();
+  }
+
+  function shuffleUpcoming() {
+    player.unshuffled = [...player.queue];
+    const upcoming = player.queue.slice(player.index + 1);
+    for (let i = upcoming.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [upcoming[i], upcoming[j]] = [upcoming[j], upcoming[i]];
+    }
+    player.queue = [...player.queue.slice(0, player.index + 1), ...upcoming];
+  }
+
+  function toggleShuffle() {
+    player.shuffle = !player.shuffle;
+    if (player.shuffle) {
+      shuffleUpcoming();
+    } else if (player.unshuffled) {
+      const current = player.queue[player.index];
+      const added = player.queue.filter((track) => !player.unshuffled.includes(track));
+      player.queue = [...player.unshuffled, ...added];
+      player.index = Math.max(0, player.queue.indexOf(current));
+      player.unshuffled = null;
+    }
+    const button = $('#np-shuffle');
+    button.classList.toggle('on', player.shuffle);
+    button.setAttribute('aria-pressed', String(player.shuffle));
+    popIn(button.firstElementChild);
+    toast(player.shuffle ? 'Shuffle on.' : 'Shuffle off.');
+  }
+
+  function setRepeat(mode) {
+    player.repeat = mode;
+    const button = $('#np-repeat');
+    button.classList.toggle('on', mode !== 'off');
+    button.dataset.mark = mode === 'once' ? '1' : '∞';
+    button.title = t(mode === 'once' ? 'Repeat: one more time' : mode === 'always' ? 'Repeat: forever' : 'Repeat');
+    button.setAttribute('aria-label', button.title);
+  }
+
+  function cycleRepeat() {
+    const next = { off: 'once', once: 'always', always: 'off' }[player.repeat];
+    setRepeat(next);
+    popIn($('#np-repeat svg'));
+    toast({ off: 'Repeat off.', once: 'This song plays one more time.', always: 'This song repeats forever.' }[next]);
+  }
+
+  // Plays the same song again when repeat is on, and says whether it did.
+  function replayIfRepeating() {
+    if (player.repeat === 'off') return false;
+    if (player.repeat === 'once') setRepeat('off');
+    player.counted = false;
+    audio.currentTime = 0;
+    audio.play().catch(() => setNowPlaying({ playing: false }));
+    return true;
   }
 
   async function loadCurrent(fadeSeconds = transitionsOn() ? MANUAL_FADE_SECONDS : 0) {
@@ -676,6 +737,7 @@
   function step(direction) {
     const next = player.index + direction;
     if (player.queue[next]) {
+      if (player.repeat === 'once') setRepeat('off');
       player.index = next;
       loadCurrent();
     }
@@ -711,13 +773,13 @@
         api.server('countPlay', track.id, listenerId());
       }
       const blend = transitionSeconds();
-      if (transitionsOn() && !fade.active && !deck.paused && dur > blend * 3 && dur - deck.currentTime <= blend && player.queue[player.index + 1]) {
+      if (player.repeat === 'off' && transitionsOn() && !fade.active && !deck.paused && dur > blend * 3 && dur - deck.currentTime <= blend && player.queue[player.index + 1]) {
         player.index += 1;
         loadCurrent(blend);
       }
     });
     deck.addEventListener('ended', () => {
-      if (deck !== audio) return;
+      if (deck !== audio || replayIfRepeating()) return;
       if (player.queue[player.index + 1]) step(1);
       else setNowPlaying({ playing: false });
     });
@@ -1157,7 +1219,8 @@
     return h('button', { class: 'album', onclick: onOpen },
       h('img', { src: album.art, alt: '', loading: 'lazy', decoding: 'async' }),
       h('strong', { raw: album.title }),
-      h('span', { raw: album.artist }));
+      h('span', { raw: album.artist }),
+      album.license ? h('span', { class: 'album-license', raw: album.license }) : null);
   }
 
   async function openArchiveAlbum(album, container, back) {
@@ -1169,6 +1232,7 @@
           h('button', { class: 'button small', text: 'Back', onclick: back }),
           tracks.length ? h('button', { class: 'button small', text: 'Play all', onclick: () => playQueue(tracks, 0) }) : null),
         h('h2', { class: 'section-title', raw: album.title }),
+        album.license ? h('p', { class: 'free-note', raw: `${album.artist} · ${album.license}` }) : null,
         tracks.length ? trackList(tracks) : h('p', { class: 'empty', text: 'This album has no playable tracks.' }));
     } catch {
       container.replaceChildren(
@@ -1308,10 +1372,60 @@
       const played = new Set(loadRecent().map(trackKey));
       return (await api.similar(favouriteGenre())).filter((track) => !played.has(trackKey(track))).slice(-6);
     }, (tracks) => trackList(tracks), 'Couldn’t load trending songs. Check your internet connection.');
-    homeParts.albums.replaceChildren(h('h2', { class: 'section-title', text: 'Free albums' }));
-    const albums = h('div', {});
-    homeParts.albums.append(albums);
-    renderArchiveResults('Electronic', albums, 6);
+    loadFreeMusic();
+  }
+
+  const FREE_PAGE_SIZE = 12;
+
+  // Music checked to be free to share. Today's pick changes every day, so Home keeps feeling new.
+  async function loadFreeMusic() {
+    const box = homeParts.albums;
+    box.replaceChildren(h('h2', { class: 'section-title', text: 'Free to share' }), h('div', { class: 'shelf skeletons' }, ...[0, 1, 2, 3, 4, 5].map(() => h('i', { class: 'skeleton-tile' }))));
+    let all = [];
+    try {
+      all = await api.freeAlbums();
+    } catch {
+      all = [];
+    }
+    if (!all.length) {
+      box.replaceChildren(h('h2', { class: 'section-title', text: 'Free to share' }), h('p', { class: 'empty', text: 'Couldn’t load free music. Check your internet connection.' }));
+      return;
+    }
+    const day = Math.floor(Date.now() / 86400000);
+    const mixed = [...all].sort((a, b) => dailyOrder(a.id, day) - dailyOrder(b.id, day));
+    const genres = [...new Set(all.map((album) => album.genre))].sort();
+    const songCount = all.reduce((sum, album) => sum + (album.songs || 0), 0);
+    let genre = '';
+    let shown = FREE_PAGE_SIZE;
+    const content = h('div', {});
+    const chips = h('div', { class: 'chips free-genres' });
+    const draw = () => {
+      chips.replaceChildren(...['', ...genres].map((name) => h('button', {
+        class: `chip${name === genre ? ' selected' : ''}`,
+        text: name || 'All',
+        onclick: () => {
+          genre = name;
+          shown = FREE_PAGE_SIZE;
+          draw();
+        },
+      })));
+      const list = mixed.filter((album) => !genre || album.genre === genre);
+      content.replaceChildren(
+        h('div', { class: 'album-grid' }, ...list.slice(0, shown).map((album) => albumCard(album, () => openArchiveAlbum(album, content, draw)))),
+        shown < list.length ? h('button', { class: 'button small show-more', text: 'Show more', onclick: () => { shown += FREE_PAGE_SIZE; draw(); } }) : null);
+    };
+    box.replaceChildren(
+      h('h2', { class: 'section-title', text: 'Free to share' }),
+      h('p', { class: 'free-note', text: '{albums} albums and {songs} songs whose artists let anyone share them.', values: { albums: formatCount(all.length), songs: formatCount(songCount) } }),
+      chips,
+      content);
+    draw();
+  }
+
+  function dailyOrder(id, day) {
+    let mixed = day;
+    for (const letter of id) mixed = (mixed * 31 + letter.charCodeAt(0)) % 1000003;
+    return mixed;
   }
 
   function greeting() {
@@ -1590,10 +1704,93 @@
     if (activePage === 'collection') renderCollection();
   }
 
+  function showReportChoice(track, menu, anchor) {
+    menu.replaceChildren(
+      h('p', { class: 'pop-title', text: 'Report this song' }),
+      h('button', { text: 'Report a problem', role: 'menuitem', onclick: () => showReportForm(track, menu, anchor) }),
+      h('button', { text: 'Report for copyright', role: 'menuitem', onclick: () => { closeMenu(); showCopyrightForm(track); } }));
+    placeMenu(menu, anchor);
+  }
+
+  // Asks for what a rights owner needs to give, so the song can be checked and they can be answered.
+  function showCopyrightForm(track) {
+    const name = h('input', { class: 'field', maxlength: 100, autocomplete: 'name', placeholder: 'Your name or company', 'aria-label': 'Your name or company' });
+    const email = h('input', { class: 'field', type: 'email', maxlength: 150, autocomplete: 'email', placeholder: 'Email', 'aria-label': 'Email', value: account.user?.email || '' });
+    const work = h('textarea', { class: 'field', rows: 3, maxlength: 500, placeholder: 'What is your work, and where can it be found?', 'aria-label': 'What is your work, and where can it be found?' });
+    const promise = h('input', { type: 'checkbox' });
+    const message = h('p', { class: 'status-note', role: 'alert' });
+    const send = h('button', {
+      class: 'button primary',
+      text: 'Send copyright report',
+      onclick: async () => {
+        if (name.value.trim().length < 2 || !email.value.includes('@') || work.value.trim().length < 5) {
+          message.textContent = t('Please fill in your name, email and your work.');
+          return;
+        }
+        if (!promise.checked) {
+          message.textContent = t('Please confirm that this report is true.');
+          return;
+        }
+        send.disabled = true;
+        const result = await api.server('report', { key: trackKey(track), title: track.title, artist: track.artist, reason: work.value, kind: 'copyright', contact: `${name.value.trim()} <${email.value.trim()}>` });
+        send.disabled = false;
+        if (result.ok) {
+          closeSheet();
+          toast('Thanks. Your report was sent.');
+        } else {
+          message.textContent = errorMessage(result);
+        }
+      },
+    });
+    openSheet('Report for copyright',
+      h('p', { class: 'status-note', raw: `${track.title} · ${track.artist}` }),
+      name,
+      email,
+      work,
+      h('label', { class: 'check' }, promise, h('span', { text: 'I own this work or act for the owner, and this report is true.' })),
+      message,
+      h('div', { class: 'actions' }, send));
+  }
+
+  /* ---------- deleting your own songs ---------- */
+
+  const isMySong = (track) => track.source === 'solam' && Boolean(account.user) && track.artistId === account.user.id;
+
+  function askToDeleteSong(track) {
+    const remove = h('button', {
+      class: 'button danger',
+      text: 'Yes, delete this song',
+      onclick: async () => {
+        remove.disabled = true;
+        const result = await api.server('removeTrack', track.id);
+        remove.disabled = false;
+        if (!result.ok) {
+          toast(errorMessage(result));
+          return;
+        }
+        closeSheet();
+        toast('Your song was deleted.');
+        hiddenTracks.add(trackKey(track));
+        if (player.queue[player.index] && trackKey(player.queue[player.index]) === trackKey(track)) {
+          if (player.queue[player.index + 1]) step(1);
+          else audio.pause();
+        }
+        if (activePage === 'upload') renderUpload();
+        else if (activePage === 'artist') openArtist('solam', account.user.id);
+        else if (activePage === 'collection') renderCollection();
+        if (homeParts.newSongs) loadNewSongs();
+      },
+    });
+    openSheet('Delete this song?',
+      h('p', { class: 'status-note', raw: track.title }),
+      h('p', { class: 'status-note', text: 'This permanently removes the song, its cover and its plays from Solam. It can’t be undone.' }),
+      h('div', { class: 'actions' }, remove, h('button', { class: 'button', text: 'Keep it', onclick: closeSheet })));
+  }
+
   function showReportForm(track, menu, anchor) {
     const reason = h('textarea', { class: 'field', rows: 3, maxlength: 500, placeholder: 'What is wrong with this song?', 'aria-label': 'What is wrong with this song?' });
     const send = async () => {
-      const result = await api.server('report', { key: trackKey(track), title: track.title, artist: track.artist, reason: reason.value });
+      const result = await api.server('report', { key: trackKey(track), title: track.title, artist: track.artist, reason: reason.value, kind: 'problem' });
       if (result.ok) {
         toast('Thanks. Your report was sent.');
         closeMenu();
@@ -1627,13 +1824,15 @@
       item('Play next', () => { playNext(track); closeMenu(); }),
       item('Add to queue', () => { addToQueue(track); closeMenu(); }),
       item('Share', () => { closeMenu(); showShareSheet(track); }),
+      track.licenseUrl ? h('button', { raw: t('License: {name}', { name: track.license }), role: 'menuitem', onclick: () => { api.openLink(track.licenseUrl); closeMenu(); } }) : null,
       item('Comments', () => { closeMenu(); showComments(track); }),
       context ? item(context.removeLabel, () => { context.onRemove(track); closeMenu(); }) : null,
+      isMySong(track) ? item('Delete my song', () => { closeMenu(); askToDeleteSong(track); }) : null,
       hasOnlyPreview(track) ? item('Listen to the full song', () => showFullSongMenu(track, anchor)) : null,
       isOffline ? item('Remove download', () => { removeDownload(track); closeMenu(); }) : null,
       !isOffline && canDownload(track) ? item('Download for offline', () => { downloadTrack(track); closeMenu(); }) : null,
       !isOffline && (track.source === 'preview' || track.source === 'imported') ? h('p', { class: 'pop-note', text: 'Previews can’t be downloaded.' }) : null,
-      track.source !== 'local' && track.source !== 'imported' && account.configured ? item('Report this song', () => showReportForm(track, menu, anchor)) : null,
+      track.source !== 'local' && track.source !== 'imported' && account.configured ? item('Report this song', () => showReportChoice(track, menu, anchor)) : null,
       h('p', { class: 'pop-title', text: 'Add to a playlist' }),
       ...saved.playlists.map((list) => h('button', { raw: list.name, role: 'menuitem', onclick: () => { addToPlaylist(list, track); closeMenu(); } })),
       ...sharedLists.map((list) => h('button', { raw: `${list.name} (${t('Shared')})`, role: 'menuitem', onclick: () => { addToSharedList(list, track); closeMenu(); } })),
@@ -2242,8 +2441,8 @@
     box.replaceChildren(
       h('h2', { class: 'section-title', text: 'Reports' }),
       reports.length ? null : h('p', { class: 'empty', text: 'Nothing has been reported.' }),
-      ...reports.map((report) => h('div', { class: 'review-row' },
-        h('div', { class: 'track-text wrap' }, h('strong', { raw: `${report.title} · ${report.artist}` }), h('span', { raw: report.reason })),
+      ...[...reports].sort((a, b) => Number(b.kind === 'copyright') - Number(a.kind === 'copyright')).map((report) => h('div', { class: 'review-row' },
+        h('div', { class: 'track-text wrap' }, report.kind === 'copyright' ? h('span', { class: 'badge status-rejected report-kind', text: 'Copyright' }) : null, h('strong', { raw: `${report.title} · ${report.artist}` }), h('span', { raw: report.reason }), report.contact ? h('span', { raw: report.contact }) : null),
         h('button', {
           class: 'button small primary',
           text: report.track_key.startsWith('comment:') ? 'Delete comment' : 'Hide song',
@@ -2485,11 +2684,7 @@
         h('button', {
           class: 'button small',
           text: 'Delete',
-          onclick: async () => {
-            const done = await api.server('removeTrack', track.id);
-            if (!done.ok) toast(errorMessage(done));
-            renderUpload();
-          },
+          onclick: () => askToDeleteSong({ ...track, artistId: account.user.id }),
         }))));
   }
 
@@ -2703,14 +2898,14 @@
         h('h3', { text: 'About Solam' }),
         h('p', { id: 'about-version', class: 'status-note', text: 'Beta version' }),
         h('p', { class: 'status-note', text: 'This is a beta version, so some things may not work yet.' }),
-        h('div', { class: 'actions' }, h('button', { class: 'button', text: 'Contact support', onclick: showSupportForm }), h('button', { class: 'button', text: 'Replay the welcome tour', onclick: showWelcome })),
+        h('div', { class: 'actions' }, h('button', { class: 'button', text: 'Contact support', onclick: showSupportForm }), h('button', { class: 'button', text: 'Replay the welcome tour', onclick: showWelcome }), h('button', { class: 'button', text: 'See what’s new', onclick: showWhatsNew })),
         legalLinks()),
 
       h('div', { class: 'actions' }, h('button', {
         class: 'button',
         text: 'Reset all settings',
         onclick: () => {
-          settings = { ...DEFAULTS, welcomed: true };
+          settings = { ...DEFAULTS, welcomed: true, seenNews: WHATS_NEW_VERSION };
           saveSettings();
           container.replaceChildren();
           buildSettings();
@@ -2776,6 +2971,26 @@
         h('span', { class: 'wt-tiles' }, ...[0, 1, 2].map(() => h('i', { class: 'wt-tile' }, h('b')))));
     } else if (kind === 'glass') {
       scene.append(...[0, 1, 2].map(() => h('span', { class: 'wt-card' })), h('span', { class: 'wt-shine' }));
+    } else if (kind === 'fresh') {
+      scene.append(h('span', { class: 'wn-screen' },
+        h('span', { class: 'wn-line' }), h('span', { class: 'wn-line short' }),
+        h('span', { class: 'wn-row' }, ...[0, 1, 2].map(() => h('i'))),
+        h('span', { class: 'wn-row' }, ...[0, 1, 2].map(() => h('i'))),
+        h('span', { class: 'wn-menu' }, h('b'))));
+    } else if (kind === 'lens') {
+      scene.append(h('span', { class: 'wn-sky' }, h('i', { class: 'wn-stripes' }), h('span', { class: 'wn-lens' }, h('i', { class: 'wn-stripes' }))));
+    } else if (kind === 'social') {
+      scene.append(
+        h('span', { class: 'wn-bubble' }, h('i'), h('i')), h('span', { class: 'wn-bubble two' }, h('i'), h('i')),
+        h('span', { class: 'wn-qr' }, ...Array.from({ length: 25 }, (_, i) => h('i', { style: `--n:${(i * 7) % 25};opacity:${[1, 2, 3, 7, 9, 12, 15, 17, 21, 22].includes(i) ? 0.12 : 1}` }))));
+    } else if (kind === 'mix') {
+      scene.append(
+        h('span', { class: 'wn-disc' }), h('span', { class: 'wn-disc two' }),
+        h('span', { class: 'wn-wave' }, ...Array.from({ length: 11 }, (_, i) => h('i', { style: `--n:${i}` }))));
+    } else if (kind === 'profile') {
+      scene.append(h('span', { class: 'wn-card' }, h('span', { class: 'wn-banner' }), h('span', { class: 'wn-ring' }), h('span', { class: 'wn-face' }, icon('account')), h('span', { class: 'wn-line' }), h('span', { class: 'wn-line short' })));
+    } else if (kind === 'languages') {
+      scene.append(h('span', { class: 'wn-words' }, ...['Hello', 'Привет', 'Hola', 'Olá', 'Hallo'].map((word, i) => h('i', { raw: word, style: `--n:${i}` }))));
     } else {
       scene.append(
         h('span', { class: 'wt-phone' }, h('i', { class: 'wt-slot' }), h('i', { class: 'wt-slot' }), h('i', { class: 'wt-slot' })),
@@ -2785,15 +3000,29 @@
     return scene;
   }
 
-  function showWelcome() {
+  const WHATS_NEW_STEPS = [
+    ['A fresh new look', 'A new Home, new songs from Solam artists up front, and a menu that fits your phone.', 'fresh'],
+    ['Real liquid glass', 'The background now bends at the edges of the glass, on your phone too.', 'lens'],
+    ['Better with friends', 'Comment on songs, build playlists together, and share any song with a link, QR code or story picture.', 'social'],
+    ['More music, more control', 'Hundreds of free albums to explore, plus repeat and shuffle buttons in the player.', 'search'],
+    ['Premium got serious', 'Play next, Up next, and DJ mixes between songs on Windows.', 'mix'],
+    ['Make it your profile', 'Add a picture and banner in Account. With Premium, they can move.', 'profile'],
+    ['Hello, hola, olá, hallo', 'Solam now speaks Spanish, Portuguese and German too. Updates install themselves on Windows.', 'languages'],
+  ];
+
+  const showWelcome = () => showTour(WELCOME_STEPS, 'Start listening');
+  const showWhatsNew = () => showTour(WHATS_NEW_STEPS, 'Got it');
+
+  function showTour(steps, lastLabel) {
     let step = 0;
     const content = h('div', { class: 'wt-content' });
-    const bars = WELCOME_STEPS.map(() => h('i', {}, h('b')));
+    const bars = steps.map(() => h('i', {}, h('b')));
     const next = h('button', { id: 'welcome-next', class: 'button primary wt-next' });
     const skip = h('button', { id: 'welcome-skip', class: 'button wt-skip', text: 'Skip' });
     const overlay = h('div', { id: 'welcome' }, h('div', { class: 'wt-panel' }, content, h('div', { class: 'wt-progress' }, ...bars), h('div', { class: 'wt-actions' }, next, skip)));
     const finish = () => {
       settings.welcomed = true;
+      settings.seenNews = WHATS_NEW_VERSION;
       saveSettings();
       window.removeEventListener('keydown', keys);
       overlay.classList.add('closing');
@@ -2806,8 +3035,8 @@
       }, WELCOME_REVEAL_MS);
     };
     const draw = (direction) => {
-      const [title, text, scene] = WELCOME_STEPS[step];
-      const last = step === WELCOME_STEPS.length - 1;
+      const [title, text, scene] = steps[step];
+      const last = step === steps.length - 1;
       const old = content.firstElementChild;
       if (old) {
         old.classList.add(direction < 0 ? 'wt-leave-back' : 'wt-leave');
@@ -2822,12 +3051,12 @@
         bar.classList.toggle('done', i < step);
         bar.classList.toggle('on', i === step);
       });
-      next.textContent = t(last ? 'Start listening' : 'Next');
+      next.textContent = t(last ? lastLabel : 'Next');
       next.classList.toggle('wt-go', last);
       skip.classList.toggle('wt-gone', last);
     };
     const move = (direction) => {
-      if (direction > 0 && step === WELCOME_STEPS.length - 1) {
+      if (direction > 0 && step === steps.length - 1) {
         finish();
         return;
       }
@@ -3138,8 +3367,8 @@
 
   // Only what is needed to play the song again, so friends' lists stay small.
   function sharedTrack(track) {
-    const { source, id, title, artist, album, url, thumb, art, duration, genre, artistId, artistSource, path, format, downloadable } = storableTrack(track);
-    return { key: trackKey(track), source, id, title, artist, album, url, thumb: thumb || art, art: art || thumb, duration, genre, artistId, artistSource, path, format, downloadable, fallbacks: (track.fallbacks || []).slice(0, 2) };
+    const { source, id, title, artist, album, url, thumb, art, duration, genre, artistId, artistSource, path, format, downloadable, license, licenseUrl } = storableTrack(track);
+    return { key: trackKey(track), license, licenseUrl, source, id, title, artist, album, url, thumb: thumb || art, art: art || thumb, duration, genre, artistId, artistSource, path, format, downloadable, fallbacks: (track.fallbacks || []).slice(0, 2) };
   }
 
   async function shareList(list) {
@@ -3776,6 +4005,10 @@
     setIcon($('#win-close'), 'close');
     setIcon($('#np-prev'), 'prev');
     setIcon($('#np-next'), 'next');
+    setIcon($('#np-repeat'), 'repeat');
+    setIcon($('#np-shuffle'), 'shuffle');
+    $('#np-repeat').onclick = cycleRepeat;
+    $('#np-shuffle').onclick = toggleShuffle;
     setIcon($('#np-mini'), 'mini');
     setIcon($('#bigcover-close'), 'down');
     setIcon($('#np-heart'), 'heart');
@@ -3981,6 +4214,7 @@
     window.addEventListener('focus', () => { if (account.user) refreshPremium(); });
     window.addEventListener('hashchange', openLinkFromAddress);
     if (!settings.welcomed) showWelcome();
+    else if (settings.seenNews !== WHATS_NEW_VERSION) showWhatsNew();
     try {
       library = await api.getLibrary();
     } catch {

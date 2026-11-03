@@ -268,13 +268,13 @@
       if (prefixes.length) await removeFiles(prefixes, token).catch(() => {});
     },
     countPlay: (id, listener) => json('/rest/v1/rpc/count_play', 'POST', { track: id, listener: listener || null }).catch(() => {}),
-    async report({ key, title, artist, reason }) {
+    async report({ key, title, artist, reason, kind, contact }) {
       const clean = String(reason || '').trim();
       if (clean.length < 3) throw new Error('reason-needed');
       const token = await validToken().catch(() => null);
-      await json('/rest/v1/reports', 'POST', { track_key: String(key).slice(0, 300), title: String(title).slice(0, 300), artist: String(artist).slice(0, 300), reason: clean.slice(0, 500) }, {}, token || undefined);
+      await json('/rest/v1/reports', 'POST', { track_key: String(key).slice(0, 300), title: String(title).slice(0, 300), artist: String(artist).slice(0, 300), reason: clean.slice(0, 500), kind: kind === 'copyright' ? 'copyright' : 'problem', contact: String(contact || '').trim().slice(0, 300) || null }, {}, token || undefined);
     },
-    reports: async () => raw('/rest/v1/reports?select=id,track_key,title,artist,reason,created_at&order=created_at.asc&limit=100', { token: await requireToken() }),
+    reports: async () => raw('/rest/v1/reports?select=id,track_key,title,artist,reason,kind,contact,created_at&order=created_at.asc&limit=100', { token: await requireToken() }),
     clearReport: async (id) => raw(`/rest/v1/reports?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', token: await requireToken() }),
     hideTrack: async (key) => json('/rest/v1/hidden_tracks', 'POST', { track_key: key }, { Prefer: 'resolution=ignore-duplicates' }, await requireToken()),
     hidden: async () => (await raw('/rest/v1/hidden_tracks?select=track_key&limit=5000')).map((row) => row.track_key),

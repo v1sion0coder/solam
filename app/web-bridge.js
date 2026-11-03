@@ -6,7 +6,7 @@
   const OFFLINE_INDEX = 'solam.offline';
   const JSONP_TIMEOUT_MS = 12000;
   const UPDATE_CHECK_EVERY_MS = 60 * 60 * 1000;
-  const SAFE_LINKS = /^https:\/\/([a-z0-9-]+\.)*(spotify\.com|google\.com|apple\.com|soundcloud\.com|youtube\.com|deezer\.com|lemonsqueezy\.com)\//;
+  const SAFE_LINKS = /^https:\/\/([a-z0-9-]+\.)*(spotify\.com|google\.com|apple\.com|soundcloud\.com|youtube\.com|deezer\.com|lemonsqueezy\.com|archive\.org|creativecommons\.org)\//;
   const backend = window.SolamWebBackend;
   const noop = () => {};
 
@@ -187,6 +187,7 @@
     onMemoryReport: noop,
     clearPageCache: noop,
     searchArchive: (term) => music.searchArchive(String(term)),
+    freeAlbums: () => music.freeAlbums(),
     archiveAlbum: (id) => music.loadArchiveAlbum(String(id)),
     lyrics: (track) => music.loadLyrics(track).catch(() => null),
     imageData,
