@@ -3004,7 +3004,7 @@
     ['A fresh new look', 'A new Home, new songs from Solam artists up front, and a menu that fits your phone.', 'fresh'],
     ['Real liquid glass', 'The background now bends at the edges of the glass, on your phone too.', 'lens'],
     ['Better with friends', 'Comment on songs, build playlists together, and share any song with a link, QR code or story picture.', 'social'],
-    ['More music, more control', 'Hundreds of free albums to explore, plus repeat and shuffle buttons in the player.', 'search'],
+    ['More music, more control', 'Free albums to explore, plus repeat and shuffle buttons in the player.', 'search'],
     ['Premium got serious', 'Play next, Up next, and DJ mixes between songs on Windows.', 'mix'],
     ['Make it your profile', 'Add a picture and banner in Account. With Premium, they can move.', 'profile'],
     ['Hello, hola, olá, hallo', 'Solam now speaks Spanish, Portuguese and German too. Updates install themselves on Windows.', 'languages'],

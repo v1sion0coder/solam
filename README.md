@@ -18,7 +18,7 @@
 
 ## What's inside
 
-- **Free music:** songs from independent artists, plus hundreds of albums whose licenses let anyone share them
+- **Free music:** songs from independent artists, plus free albums from netlabels whose licenses let anyone share them
 - **Famous artists:** 30-second previews, with a button to hear the full song on a licensed service
 - **Liquid glass:** animated themes, and glass you can set from clear to tinted
 - **Lyrics:** lines light up along with the song when timed lyrics exist
@@ -41,7 +41,7 @@
 
 ## About the music
 
-Solam doesn't host pirated music. Free albums come from the Internet Archive under Creative Commons or public domain terms, and each shows its license. If a song uses your work without permission, open its … menu and choose **Report this song**, then **Report for copyright**.
+Solam doesn't host pirated music. Free albums come from netlabels on the Internet Archive under Creative Commons or public domain terms, and each shows its license. Albums by well-known artists are filtered out, but licenses are set by uploaders, so reports are always welcome. If a song uses your work without permission, open its … menu and choose **Report this song**, then **Report for copyright**.
 
 ## Help
 

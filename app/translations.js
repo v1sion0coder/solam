@@ -126,15 +126,15 @@
     ru: { Shuffle: 'Перемешать', Repeat: 'Повтор', 'Repeat: one more time': 'Повтор: ещё один раз', 'Repeat: forever': 'Повтор: бесконечно', 'Shuffle on.': 'Перемешивание включено.', 'Shuffle off.': 'Перемешивание выключено.', 'Repeat off.': 'Повтор выключен.', 'This song plays one more time.': 'Песня сыграет ещё раз.', 'This song repeats forever.': 'Песня будет повторяться бесконечно.', 'Free to share': 'Можно делиться свободно', 'Couldn’t load free music. Check your internet connection.': 'Не удалось загрузить бесплатную музыку. Проверьте интернет.', '{albums} albums and {songs} songs whose artists let anyone share them.': 'Альбомов: {albums}, песен: {songs}. Их авторы разрешают делиться ими всем.', All: 'Все', 'License: {name}': 'Лицензия: {name}' },
   };
   const TOUR_TITLE = 'More music, more control';
-  const TOUR_TEXT = 'Hundreds of free albums to explore, plus repeat and shuffle buttons in the player.';
+  const TOUR_TEXT = 'Free albums to explore, plus repeat and shuffle buttons in the player.';
   PLAY_TEXT.es[TOUR_TITLE] = 'Más música, más control';
-  PLAY_TEXT.es[TOUR_TEXT] = 'Cientos de álbumes gratis por explorar, y botones de repetir y aleatorio en el reproductor.';
+  PLAY_TEXT.es[TOUR_TEXT] = 'Álbumes gratis por explorar, y botones de repetir y aleatorio en el reproductor.';
   PLAY_TEXT.br[TOUR_TITLE] = 'Mais música, mais controle';
-  PLAY_TEXT.br[TOUR_TEXT] = 'Centenas de álbuns grátis para explorar, e botões de repetir e aleatório no player.';
+  PLAY_TEXT.br[TOUR_TEXT] = 'Álbuns grátis para explorar, e botões de repetir e aleatório no player.';
   PLAY_TEXT.de[TOUR_TITLE] = 'Mehr Musik, mehr Kontrolle';
-  PLAY_TEXT.de[TOUR_TEXT] = 'Hunderte kostenlose Alben zum Entdecken, dazu Wiederholen und Zufallswiedergabe im Player.';
+  PLAY_TEXT.de[TOUR_TEXT] = 'Kostenlose Alben zum Entdecken, dazu Wiederholen und Zufallswiedergabe im Player.';
   PLAY_TEXT.ru[TOUR_TITLE] = 'Больше музыки, больше контроля';
-  PLAY_TEXT.ru[TOUR_TEXT] = 'Сотни бесплатных альбомов, а в плеере кнопки повтора и перемешивания.';
+  PLAY_TEXT.ru[TOUR_TEXT] = 'Бесплатные альбомы, а в плеере кнопки повтора и перемешивания.';
   addTo(ES, PLAY_TEXT.es);
   addTo(PT_BR, PLAY_TEXT.br);
   addTo(PT, Object.fromEntries(Object.entries(PLAY_TEXT.br).map(([key, value]) => [key, PORTUGAL_WORDS.reduce((text, [from, to]) => text.replace(from, to), value)])));

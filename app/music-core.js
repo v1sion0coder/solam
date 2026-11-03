@@ -11,7 +11,6 @@
   const FREE_CATALOG = 'https://v1sion0coder.github.io/solam/free-catalog.json';
   // Only licenses that allow sharing in an app with paid features. Non-commercial music is left out.
   const OPEN_LICENSE = /creativecommons\.org\/(licenses\/(by|by-sa)\/|publicdomain\/)/i;
-  const ARCHIVE_OPEN_LICENSES = `licenseurl:(${['by/2.0', 'by/2.5', 'by/3.0', 'by/4.0', 'by-sa/2.0', 'by-sa/2.5', 'by-sa/3.0', 'by-sa/4.0'].map((id) => `"http://creativecommons.org/licenses/${id}/"`).concat('"http://creativecommons.org/publicdomain/zero/1.0/"', '"http://creativecommons.org/publicdomain/mark/1.0/"').join(' OR ')})`;
 
   function licenseName(url) {
     const match = /licenses\/([a-z-]+)\/([\d.]+)/i.exec(url);
@@ -257,19 +256,13 @@
       return { ...artist, tracks, related, totalPlays: tracks.reduce((sum, track) => sum + track.plays, 0), partialPlays: artist.trackCount > tracks.length };
     }
 
+    // Searches only the checked list, because anyone can upload to the Archive with a false license.
     async function searchArchive(term) {
-      const safeTerm = term.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim();
-      const query = `(${safeTerm || 'music'}) AND mediatype:audio AND collection:(netlabels OR opensource_audio) AND ${ARCHIVE_OPEN_LICENSES}`;
-      const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&sort[]=downloads+desc&rows=30&output=json`;
-      const data = await fetchJson(url);
-      return (data?.response?.docs || []).filter((doc) => OPEN_LICENSE.test(String(doc.licenseurl))).map((doc) => ({
-        license: licenseName(String(doc.licenseurl)),
-        licenseUrl: String(doc.licenseurl).replace(/^http:/, 'https:'),
-        id: doc.identifier,
-        title: Array.isArray(doc.title) ? doc.title[0] : doc.title || doc.identifier,
-        artist: (Array.isArray(doc.creator) ? doc.creator[0] : doc.creator) || 'Unknown artist',
-        art: `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,
-      }));
+      const words = normalize(term).split(' ').filter(Boolean);
+      return (await freeAlbums()).filter((album) => {
+        const text = normalize(`${album.title} ${album.artist} ${album.genre}`);
+        return words.every((word) => text.includes(word));
+      });
     }
 
     function parseLength(value) {
@@ -303,6 +296,16 @@
         format: flac.length ? 'FLAC' : 'MP3',
         name: file.name,
       })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    }
+
+    let freeList = null;
+
+    async function freeAlbums() {
+      freeList ||= fetchJson(FREE_CATALOG).then((data) => data?.albums || []).catch((error) => {
+        freeList = null;
+        throw error;
+      });
+      return freeList;
     }
 
     function cleanSongTitle(title, artist) {
@@ -350,8 +353,6 @@
       return null;
     }
 
-
-    const freeAlbums = async () => (await fetchJson(FREE_CATALOG))?.albums || [];
 
     const trending = () => fetchOnlineTracks('/tracks/trending?limit=12');
 
