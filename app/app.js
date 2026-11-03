@@ -3874,6 +3874,16 @@
 
   // Everyone is told about a new version, and it installs from inside the app.
   function showUpdate(update) {
+    // On Windows updates arrive quietly and install when Solam closes, so the next open is already new.
+    if (!isWeb && update.state !== 'error') {
+      if (update.state === 'ready') {
+        const notice = $('#update-notice');
+        notice.hidden = false;
+        notice.textContent = t('Update ready. Click to restart now.');
+        notice.onclick = () => api.installUpdate();
+      }
+      return;
+    }
     const box = $('#update-box');
     const title = $('#update-title');
     const note = $('#update-note');

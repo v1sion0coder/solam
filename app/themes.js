@@ -129,7 +129,9 @@
       p.y *= 1.55;
       float r = length(p), a = atan(p.y, p.x);
       float arms = 0.5 + 0.5 * sin(a * 2.0 + log(r + 0.05) * 4.4 - t * 2.4);
-      float gas = fbm(vec2(a * 1.4 + log(r + 0.06) * 2.7 - t, r * 3.0 + t));
+      // The angle jumps once around the circle, so the gas reads it as a point on a circle to hide the seam.
+      float swirl = a + log(r + 0.06) * 1.9 - t * 0.7;
+      float gas = fbm(vec2(cos(swirl), sin(swirl)) * 1.25 + vec2(r * 2.2 + t, 3.0 - t));
       float body = pow(arms, 2.2) * gas * exp(-r * 1.65) * 2.8;
       vec3 c = vec3(0.012, 0.006, 0.035);
       c += mix(vec3(0.17, 0.2, 0.92), vec3(0.95, 0.17, 0.65), gas) * body;
