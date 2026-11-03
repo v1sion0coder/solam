@@ -6,7 +6,7 @@
   const OFFLINE_INDEX = 'solam.offline';
   const JSONP_TIMEOUT_MS = 12000;
   const UPDATE_CHECK_EVERY_MS = 60 * 60 * 1000;
-  const SAFE_LINKS = /^https:\/\/([a-z0-9-]+\.)*(spotify\.com|google\.com|apple\.com|soundcloud\.com|youtube\.com|deezer\.com)\//;
+  const SAFE_LINKS = /^https:\/\/([a-z0-9-]+\.)*(spotify\.com|google\.com|apple\.com|soundcloud\.com|youtube\.com|deezer\.com|lemonsqueezy\.com)\//;
   const backend = window.SolamWebBackend;
   const noop = () => {};
 

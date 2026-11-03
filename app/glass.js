@@ -3,6 +3,7 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MAP_SCALE = 0.35;
   const NEUTRAL = 128;
+  const FROST_WITHOUT_LENS = 0.4;
   const options = { refraction: 28, blur: 22, enabled: true };
   // iPhones blur the glass but can't bend it, and a bending filter would switch the blur off too.
   const CAN_BEND = !/iPhone|iPad|iPod|Macintosh.*Safari/.test(navigator.userAgent) || /Chrome/.test(navigator.userAgent);
@@ -73,7 +74,9 @@
     const width = element.offsetWidth;
     const height = element.offsetHeight;
     if (!width || !height) return;
-    const blur = `blur(${options.blur}px) saturate(165%)`;
+    // Without the bending filter the background draws the bend itself, so less frost keeps it visible.
+    const frost = CAN_BEND ? options.blur : options.blur * FROST_WITHOUT_LENS;
+    const blur = `blur(${frost}px) saturate(165%)`;
     if (!options.enabled || !CAN_BEND) {
       filter.replaceChildren();
       setBackdrop(element, options.blur > 0 ? blur : 'none');
@@ -145,5 +148,5 @@
     ], { duration: 620, easing: 'cubic-bezier(.3,.7,.3,1)' });
   }
 
-  window.LiquidGlass = { attach, configure, wobble };
+  window.LiquidGlass = { attach, configure, wobble, canBend: CAN_BEND };
 })();

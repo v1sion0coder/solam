@@ -20,7 +20,7 @@
   <canvas id="bg"></canvas>
 
   <header id="titlebar">
-    <div class="brand"><img src="icon.png" alt=""><span>Solam</span><span class="beta-tag">BETA</span><button id="update-notice" hidden></button></div>
+    <div class="brand"><img src="icon.png" alt=""><span>Solam</span><span class="beta-tag">BETA</span><button id="update-notice" hidden></button><button id="inbox-button" class="icon-button" title="Notifications" data-t="title" aria-label="Notifications"></button></div>
     <div class="win-buttons">
       <button id="win-min" title="Minimize" data-t="title" aria-label="Minimize"></button>
       <button id="win-max" title="Maximize" data-t="title" aria-label="Maximize"></button>
@@ -53,6 +53,11 @@
       <h1 id="bc-title"></h1>
       <p id="bc-artist"></p>
       <button id="bc-full" class="chip full-song" hidden></button>
+      <div class="bc-tools">
+        <button id="bc-next" class="chip"></button>
+        <button id="bc-comments" class="chip"></button>
+        <button id="bc-share" class="chip"></button>
+      </div>
       <div class="glass bc-lyrics" id="bc-lyrics"></div>
     </div>
   </section>
@@ -98,10 +103,13 @@
   <audio id="audio" preload="metadata"></audio>
   <audio id="audio2" preload="metadata"></audio>
 
+  <script src="translations.js"></script>
   <script src="web-config.js"></script>
   <script src="i18n.js"></script>
+  <script src="qrcode.js"></script>
   <script src="connectors.js"></script>
   <script src="music-core.js"></script>
+  <script src="social-core.js"></script>
   <script src="web-backend.js"></script>
   <script src="web-bridge.js"></script>
   <script src="themes.js"></script>

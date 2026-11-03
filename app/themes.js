@@ -8,6 +8,9 @@
   uniform float uT, uClock, uBass, uBeat, uBright, uRipAmt;
   uniform vec4 uRip[8];
   uniform vec3 uA, uB, uC;
+  uniform vec4 uGlass[4];
+  uniform float uGlassR[4];
+  uniform float uBend;
 
   float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
   float noise(vec2 p){
@@ -37,10 +40,29 @@
     offset *= uRipAmt;
     return uv + vec2(offset.x / aspect, offset.y);
   }
+  float glassEdge(vec2 p, vec4 g, float r){
+    vec2 q = abs(p - g.xy - g.zw * 0.5) - g.zw * 0.5 + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+  }
+  // Real refraction for browsers that can't bend what is behind a panel: the background bends itself under each panel's rim.
+  vec2 glassBend(vec2 p){
+    vec2 offset = vec2(0.0);
+    for (int i = 0; i < 4; i++) {
+      vec4 g = uGlass[i];
+      if (g.z <= 0.0) continue;
+      float r = uGlassR[i], d = glassEdge(p, g, r);
+      if (d >= 0.0) continue;
+      float bezel = min(r * 1.25, min(g.z, g.w) * 0.5);
+      float t = clamp(1.0 + d / bezel, 0.0, 1.0);
+      vec2 n = vec2(glassEdge(p + vec2(1.0, 0.0), g, r) - glassEdge(p - vec2(1.0, 0.0), g, r), glassEdge(p + vec2(0.0, 1.0), g, r) - glassEdge(p - vec2(0.0, 1.0), g, r));
+      offset -= normalize(n + 0.0001) * t * t * t * uBend;
+    }
+    return offset;
+  }
   vec3 theme(vec2 uv);
   void main(){
-    vec2 uv = liquid(gl_FragCoord.xy / uRes);
     vec2 screen = gl_FragCoord.xy / uRes;
+    vec2 uv = liquid((gl_FragCoord.xy + glassBend(gl_FragCoord.xy)) / uRes);
     vec3 c = theme(uv) * uBright * (1.0 + uBeat * 0.18);
     c += c * c * 0.55;
     vec2 light = (screen - uMouse) * vec2(uRes.x / uRes.y, 1.0);
@@ -182,7 +204,7 @@
 
   const QUALITY = {
     low: { scale: 0.35, frameMs: 1000 / 30 },
-    medium: { scale: 0.5, frameMs: 1000 / 60 },
+    medium: { scale: 0.5, frameMs: 1000 / 40 },
     high: { scale: 1, frameMs: 0 },
   };
 
@@ -203,6 +225,9 @@
       this.targetColors = this.colors.map((color) => color.slice());
       this.ripples = Array.from({ length: 8 }, () => [0, 0, -10, 0]);
       this.rippleIndex = 0;
+      this.glass = new Float32Array(16);
+      this.glassRadius = new Float32Array(4);
+      this.bend = 0;
       this.mouse = [-5, -5];
       this.level = { bass: 0, beat: 0 };
       this.sceneTime = 0;
@@ -236,6 +261,9 @@
       const uniforms = {};
       for (const key of ['uRes', 'uMouse', 'uT', 'uClock', 'uBass', 'uBeat', 'uBright', 'uRipAmt', 'uA', 'uB', 'uC']) uniforms[key] = gl.getUniformLocation(program, key);
       uniforms.uRip = gl.getUniformLocation(program, 'uRip');
+      uniforms.uGlass = gl.getUniformLocation(program, 'uGlass');
+      uniforms.uGlassR = gl.getUniformLocation(program, 'uGlassR');
+      uniforms.uBend = gl.getUniformLocation(program, 'uBend');
       return { program, uniforms };
     }
 
@@ -259,6 +287,19 @@
 
     setAlbumColors(colors) {
       this.targetColors = colors;
+    }
+
+    // Tells the background where the glass panels are, in screen pixels.
+    setGlass(boxes, bend) {
+      const scaleX = this.canvas.width / window.innerWidth;
+      const scaleY = this.canvas.height / window.innerHeight;
+      this.glass.fill(0);
+      this.glassRadius.fill(0);
+      boxes.slice(0, 4).forEach((box, i) => {
+        this.glass.set([box.left * scaleX, (window.innerHeight - box.bottom) * scaleY, box.width * scaleX, box.height * scaleY], i * 4);
+        this.glassRadius[i] = box.radius * scaleX;
+      });
+      this.bend = bend * scaleX;
     }
 
     pointer(x, y) {
@@ -312,6 +353,9 @@
       gl.uniform3fv(u.uA, this.colors[0]);
       gl.uniform3fv(u.uB, this.colors[1]);
       gl.uniform3fv(u.uC, this.colors[2]);
+      gl.uniform4fv(u.uGlass, this.glass);
+      gl.uniform1fv(u.uGlassR, this.glassRadius);
+      gl.uniform1f(u.uBend, this.bend);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
   }

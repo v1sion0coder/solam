@@ -1,4 +1,4 @@
-// English text is the key. Russian translations live here; anything missing stays in English.
+// English text is the key. Russian lives here and the other languages in translations.js; anything missing stays in English.
 (() => {
   const RU = {
     Home: 'Главная',
@@ -370,9 +370,16 @@
     'A new version of Solam is ready. Click to download.': 'Вышла новая версия Solam. Нажмите, чтобы скачать.',
   };
 
+  const MORE = window.SOLAM_TRANSLATIONS || {};
+  Object.assign(RU, MORE.ru);
+  const LANGUAGES = { ru: RU, es: MORE.es, pt: MORE.pt, 'pt-BR': MORE['pt-BR'], de: MORE.de };
+
   function resolveLanguage(choice) {
-    if (choice === 'ru' || choice === 'en') return choice;
-    return String(navigator.language).toLowerCase().startsWith('ru') ? 'ru' : 'en';
+    if (choice === 'en' || LANGUAGES[choice]) return choice;
+    const device = String(navigator.language);
+    if (/^pt-BR/i.test(device)) return 'pt-BR';
+    const base = device.slice(0, 2).toLowerCase();
+    return LANGUAGES[base] ? base : 'en';
   }
 
   let language = 'en';
@@ -384,7 +391,7 @@
   document.documentElement.lang = language;
 
   window.solamT = (text, values = {}) => {
-    const base = (language === 'ru' && RU[text]) || text;
+    const base = LANGUAGES[language]?.[text] || text;
     return String(base).replace(/\{(\w+)\}/g, (match, key) => (key in values ? values[key] : match));
   };
   window.solamLanguage = language;

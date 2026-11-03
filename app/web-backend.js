@@ -8,7 +8,8 @@
   const SESSION_KEY = 'solam.session';
   const AUDIO_TYPES = { mp3: 'audio/mpeg', flac: 'audio/flac', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg' };
   const PHOTO_TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-  const TRACK_FIELDS = 'id,user_id,title,genre,audio_path,art_path,duration,plays,status,created_at,lyrics,allow_download,artists(name)';
+  const VIDEO_TYPES = { mp4: 'video/mp4', webm: 'video/webm' };
+  const TRACK_FIELDS = 'id,user_id,title,genre,audio_path,art_path,duration,plays,status,created_at,lyrics,allow_download,check_notes,artists(name)';
   const ARTIST_FIELDS = 'id,name,genre,pic_path,cover_path';
 
   const config = window.SOLAM_BACKEND;
@@ -100,7 +101,7 @@
     return {
       lyrics: row.lyrics || '', downloadable: Boolean(row.allow_download), id: row.id, source: 'solam', title: row.title,
       artist: row.artists?.name || 'Solam artist', artistId: row.user_id, artistSource: 'solam', album: '', art, thumb: art,
-      url: publicUrl(row.audio_path), duration: row.duration || 0, plays: Number(row.plays) || 0, genre: row.genre || '', status: row.status,
+      url: publicUrl(row.audio_path), duration: row.duration || 0, plays: Number(row.plays) || 0, genre: row.genre || '', status: row.status, checkNotes: row.check_notes || [],
     };
   }
 
@@ -125,7 +126,8 @@
   // A browser only allows a file chooser straight after a tap, so this opens right away.
   function pickFile(kind) {
     const audio = kind === 'audio';
-    const types = audio ? AUDIO_TYPES : PHOTO_TYPES;
+    const video = kind === 'video';
+    const types = audio ? AUDIO_TYPES : video ? VIDEO_TYPES : PHOTO_TYPES;
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -141,7 +143,7 @@
         const extension = file.name.split('.').pop().toLowerCase();
         const type = types[extension];
         if (!type) { reject(new Error('bad-file-type')); return; }
-        if (file.size > (audio ? MAX_UPLOAD_BYTES : MAX_PHOTO_BYTES)) { reject(new Error(audio ? 'file-too-big' : 'photo-too-big')); return; }
+        if (file.size > (audio || video ? MAX_UPLOAD_BYTES : MAX_PHOTO_BYTES)) { reject(new Error(audio || video ? 'file-too-big' : 'photo-too-big')); return; }
         const id = crypto.randomUUID();
         const info = { file, type, extension, duration: 0 };
         if (audio) info.duration = await audioLength(file);
@@ -259,7 +261,7 @@
       const prefixes = [rows?.[0]?.audio_path, rows?.[0]?.art_path].filter(Boolean);
       if (prefixes.length) await removeFiles(prefixes, token).catch(() => {});
     },
-    countPlay: (id) => json('/rest/v1/rpc/count_play', 'POST', { track: id }).catch(() => {}),
+    countPlay: (id, listener) => json('/rest/v1/rpc/count_play', 'POST', { track: id, listener: listener || null }).catch(() => {}),
     async report({ key, title, artist, reason }) {
       const clean = String(reason || '').trim();
       if (clean.length < 3) throw new Error('reason-needed');
@@ -288,6 +290,8 @@
       if (token) await json('/rest/v1/user_data', 'POST', { user_id: session.user.id, data, updated_at: new Date().toISOString() }, { Prefer: 'resolution=merge-duplicates' }, token);
     },
   };
+
+  Object.assign(actions, window.SolamSocial.createSocial({ raw, json, validToken, requireToken, userId: () => session?.user?.id, list }));
 
   async function searchTracks(term) {
     const clean = safeTerm(term);

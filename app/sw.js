@@ -1,6 +1,6 @@
 // Keeps Solam's app files on the phone, so it opens without internet. New versions replace them.
-const CACHE = 'solam-app-0.9.5-beta.1';
-const SHELL = ["./","index.html","web-config.js","register-sw.js","manifest.webmanifest","icon.png","music-core.js","i18n.js","connectors.js","themes.js","glass.js","app.js","styles.css","mobile.css","web-backend.js","web-bridge.js"];
+const CACHE = 'solam-app-0.9.6-beta.1';
+const SHELL = ["./","index.html","web-config.js","register-sw.js","manifest.webmanifest","icon.png","icon-maskable.png","music-core.js","social-core.js","i18n.js","translations.js","qrcode.js","connectors.js","themes.js","glass.js","app.js","styles.css","mobile.css","web-backend.js","web-bridge.js"];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
