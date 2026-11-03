@@ -566,3 +566,7 @@ textarea.field { display: block; max-width: 100%; height: auto; padding: 9px 13p
 html.calm .bc-lyrics p.current { color: #fff; background: none; }
 
 .show-more { display: block; margin: 12px auto 4px; }
+
+#update-box { position: fixed; top: 52px; left: 50%; z-index: 55; width: min(520px, calc(100% - 32px)); padding: 20px 24px; transform: translateX(-50%); background: linear-gradient(145deg, rgba(var(--tint-rgb), 0.92), rgba(var(--tint-rgb), 0.97)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); animation: page-in 0.4s ease-out; }
+#update-box h2 { font-size: 19px; margin-bottom: 6px; }
+#update-box p { color: var(--ink-soft); }

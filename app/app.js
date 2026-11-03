@@ -728,12 +728,7 @@
     lyrics.synced = false;
     lyrics.currentIndex = -1;
     if (!title) {
-      (await api.offlineList().catch(() => [])).forEach((entry) => offlineFiles.set(entry.key, entry));
-    api.server('hidden').then((result) => {
-      if (result.ok) result.value.forEach((key) => hiddenTracks.add(key));
-    });
-    checkForUpdate();
-    showLyricNote('Lyrics appear here when a song plays.');
+      showLyricNote('Lyrics appear here when a song plays.');
       return;
     }
     showLyricNote('Looking for lyrics…');
@@ -2289,6 +2284,7 @@
         h('h3', { text: 'About Solam' }),
         h('p', { id: 'about-version', class: 'status-note', text: 'Beta version' }),
         h('p', { class: 'status-note', text: 'This is a beta version, so some things may not work yet.' }),
+        h('p', { class: 'status-note', text: 'Android version: Coming Soon!' }),
         h('p', { class: 'status-note', raw: t('Help: {email}', { email: 'salam0support@gmail.com' }) }),
         legalLinks()),
 
@@ -2557,6 +2553,49 @@
     }
   }
 
+  // Everyone is told about a new version, and it installs from inside the app.
+  function showUpdate(update) {
+    const box = $('#update-box');
+    const title = $('#update-title');
+    const note = $('#update-note');
+    const action = $('#update-action');
+    const later = $('#update-later');
+    if (update.state === 'error') {
+      if (box.hidden) checkForUpdate();
+      else {
+        note.textContent = t('The update couldn’t finish. Please try again later.');
+        action.hidden = true;
+        later.hidden = false;
+      }
+      return;
+    }
+    box.hidden = false;
+    later.textContent = t('Later');
+    later.onclick = () => { box.hidden = true; };
+    if (update.state === 'available') {
+      title.textContent = t('A new version of Solam is ready');
+      note.textContent = t(isWeb ? 'Update now to get the newest version {version}. Your music and settings stay.' : 'Update now to get the newest version {version}. You don’t need to install a new program, and your music and settings stay.', { version: update.version });
+      action.hidden = false;
+      action.disabled = false;
+      action.textContent = t('Update now');
+      action.onclick = () => {
+        action.disabled = true;
+        note.textContent = isWeb ? t('Updating…') : t('Downloading the update: {percent}%', { percent: 0 });
+        later.textContent = t('Hide');
+        api.downloadUpdate();
+      };
+    } else if (update.state === 'downloading') {
+      note.textContent = t('Downloading the update: {percent}%', { percent: update.percent });
+    } else if (update.state === 'ready') {
+      title.textContent = t('The update is ready');
+      note.textContent = t('Solam will close, update and open again. This takes a few seconds.');
+      action.disabled = false;
+      action.hidden = false;
+      action.textContent = t('Restart and update');
+      action.onclick = () => api.installUpdate();
+    }
+  }
+
   async function checkForUpdate() {
     try {
       const [current, latest] = await Promise.all([api.appVersion(), api.latestVersion()]);
@@ -2580,6 +2619,14 @@
     pulseTargets.push($('#dock'), $('#player'));
     wire();
     buildDock();
+    (await api.offlineList().catch(() => [])).forEach((entry) => offlineFiles.set(entry.key, entry));
+    api.server('hidden').then((result) => {
+      if (result.ok && result.value.length) {
+        result.value.forEach((key) => hiddenTracks.add(key));
+        if (activePage === 'home') loadDiscover();
+      }
+    });
+    api.onUpdateState(showUpdate);
     buildHome();
     buildPremium();
     api.onMemoryReport((report) => {

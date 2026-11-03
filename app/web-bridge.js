@@ -5,6 +5,7 @@
   const OFFLINE_CACHE = 'solam-offline';
   const OFFLINE_INDEX = 'solam.offline';
   const JSONP_TIMEOUT_MS = 12000;
+  const UPDATE_CHECK_EVERY_MS = 60 * 60 * 1000;
   const SAFE_LINKS = /^https:\/\/([a-z0-9-]+\.)*(spotify\.com|google\.com|apple\.com|soundcloud\.com|youtube\.com|deezer\.com)\//;
   const backend = window.SolamWebBackend;
   const noop = () => {};
@@ -98,6 +99,34 @@
     return entry;
   }
 
+  // Asks the website for the newest version, and tells the app when this copy is older.
+  let tellUpdate = noop;
+  let offeredVersion = null;
+  async function checkForNewVersion() {
+    try {
+      const response = await fetch('../version.json', { cache: 'no-store' });
+      if (!response.ok) return;
+      const { version } = await response.json();
+      if (version && version !== window.SOLAM_VERSION && version !== offeredVersion) {
+        offeredVersion = version;
+        tellUpdate({ state: 'available', version });
+      }
+    } catch {
+      // Being offline is fine: it checks again later.
+    }
+  }
+
+  // Fetches the new app files, then reopens the app on them.
+  async function installNewVersion() {
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration();
+      await registration?.update();
+    } catch {
+      // Reloading still fetches the newest files.
+    }
+    window.location.reload();
+  }
+
   window.solam = {
     platform: 'web',
     minimize: noop, maximize: noop, close: noop, onMaximized: noop,
@@ -131,6 +160,16 @@
       const stored = await (await caches.open(OFFLINE_CACHE)).match(`offline/${id}`);
       return stored ? URL.createObjectURL(await stored.blob()) : null;
     },
+    onUpdateState: (callback) => {
+      tellUpdate = callback;
+      checkForNewVersion();
+      setInterval(checkForNewVersion, UPDATE_CHECK_EVERY_MS);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) checkForNewVersion();
+      });
+    },
+    downloadUpdate: installNewVersion,
+    installUpdate: installNewVersion,
     appVersion: async () => window.SOLAM_VERSION,
     latestVersion: async () => window.SOLAM_VERSION,
     openSite: (page) => window.open(SITE + page, '_blank', 'noopener'),
