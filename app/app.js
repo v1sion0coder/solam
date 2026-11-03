@@ -184,6 +184,10 @@
     toastTimer = setTimeout(() => element.classList.remove('show'), 3400);
   }
 
+  document.addEventListener('load', (event) => {
+    if (event.target instanceof HTMLImageElement) event.target.classList.add('shown');
+  }, true);
+
   // Cover art is stored on several servers. When one is down, try the others, then show no image.
   const artServers = new Set();
   document.addEventListener('error', (event) => {
@@ -578,7 +582,10 @@
   async function extendQueue(track) {
     try {
       const known = new Set(player.queue.map(trackKey));
-      const more = (await api.similar(track.genre || favouriteGenre())).filter((item) => !known.has(trackKey(item)));
+      const unheard = async (genre) => (await api.similar(genre)).filter((item) => !known.has(trackKey(item)));
+      let more = await unheard(track.genre || favouriteGenre());
+      // A rare genre can have nothing similar, and the music should still keep going.
+      if (!more.length) more = await unheard('');
       for (let i = more.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [more[i], more[j]] = [more[j], more[i]];
@@ -772,6 +779,14 @@
     renderPlayer();
   }
 
+  let lastPlayIcon = null;
+
+  // A small springy bounce for things the person just pressed.
+  function popIn(element, from = 0.72) {
+    if (!element || !settings.extraMotion) return;
+    element.animate([{ transform: `scale(${from})` }, { transform: 'scale(1.08)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: 'cubic-bezier(.3,.7,.3,1)' });
+  }
+
   function renderPlayer() {
     const { np } = player;
     $('#np-title').textContent = np.title || t('Pick something to play');
@@ -783,7 +798,11 @@
     const onlyPreview = hasOnlyPreview(player.queue[player.index]);
     $('#np-full').hidden = !onlyPreview;
     $('#bc-full').hidden = !onlyPreview;
-    setIcon($('#np-play'), np.playing ? 'pause' : 'play');
+    if (lastPlayIcon !== np.playing) {
+      lastPlayIcon = np.playing;
+      setIcon($('#np-play'), np.playing ? 'pause' : 'play');
+      popIn($('#np-play svg'));
+    }
     $('#np-pos').textContent = formatTime(np.pos);
     $('#np-dur').textContent = formatTime(np.dur);
     if (!player.seeking) {
@@ -813,8 +832,8 @@
   function animateSongChange() {
     if (!settings.extraMotion) return;
     const melt = [
-      { opacity: 0, transform: 'scale(.9)', filter: 'blur(14px) saturate(1.5)' },
-      { opacity: 1, transform: 'scale(1)', filter: 'blur(0) saturate(1)' },
+      { opacity: 0, transform: 'scale(.94)' },
+      { opacity: 1, transform: 'scale(1)' },
     ];
     const rise = [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }];
     const options = { duration: 700, easing: 'cubic-bezier(.2,.8,.2,1)' };
@@ -1007,6 +1026,7 @@
     if (id === 'premium') renderPremium();
     const lit = id === 'artist' ? 'artists' : isWeb && PHONE_MORE.some(([page]) => page === id) ? 'more' : id;
     Object.entries(nav).forEach(([key, button]) => button.classList.toggle('active', key === lit));
+    moveDockGlider();
     closeMenu();
     if (id === 'library') renderLibrary();
     if (id === 'home') renderRecent();
@@ -1030,8 +1050,21 @@
     syncGlass();
   }
 
+  function moveDockGlider() {
+    const glider = document.getElementById('dock-glider');
+    const active = document.querySelector('.dock-item.active');
+    if (!glider) return;
+    glider.style.opacity = active ? '1' : '0';
+    if (!active) return;
+    glider.style.width = `${active.offsetWidth}px`;
+    glider.style.height = `${active.offsetHeight}px`;
+    glider.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+  }
+
   function buildDock() {
     const dock = $('#dock');
+    dock.append(h('span', { id: 'dock-glider', 'aria-hidden': 'true' }));
+    window.addEventListener('resize', moveDockGlider);
     const button = ([id, label, iconName]) => {
       const item = h('button', { class: 'dock-item', title: label, 'aria-label': label, onclick: () => showPage(id) }, icon(iconName), h('span', { text: label }));
       nav[id] = item;
@@ -1062,7 +1095,7 @@
       onclick: (event) => {
         event.stopPropagation();
         toggleFavourite(track);
-        wobble(heart);
+        popIn(heart.firstElementChild, 0.6);
       },
     });
     const on = isFavourite(track);
@@ -1225,7 +1258,7 @@
   }
 
   async function fillSection(container, title, load, render, failure) {
-    container.replaceChildren(h('h2', { class: 'section-title', text: title }), h('p', { class: 'empty', text: 'Loading…' }));
+    container.replaceChildren(h('h2', { class: 'section-title', text: title }), h('div', { class: 'shelf skeletons', 'aria-label': t('Loading…') }, ...[0, 1, 2, 3, 4, 5].map(() => h('i', { class: 'skeleton-tile' }))));
     try {
       const items = await load();
       container.replaceChildren(h('h2', { class: 'section-title', text: title }), items.length ? render(items) : h('p', { class: 'empty', text: 'Nothing trending right now.' }));
@@ -2690,14 +2723,18 @@
   /* ---------- sheets ---------- */
 
   function closeSheet() {
-    document.getElementById('sheet')?.remove();
+    const sheet = document.getElementById('sheet');
+    if (!sheet) return;
+    sheet.removeAttribute('id');
+    sheet.classList.add('sheet-closing');
+    setTimeout(() => sheet.remove(), settings.extraMotion ? 220 : 0);
   }
 
   function openSheet(title, ...children) {
     closeSheet();
     closeMenu();
     const body = h('div', { class: 'sheet-body' }, ...children);
-    const sheet = h('div', { id: 'sheet', role: 'dialog', 'aria-label': title },
+    const sheet = h('div', { id: 'sheet', class: 'sheet', role: 'dialog', 'aria-label': title },
       h('div', { class: 'sheet-back', onclick: closeSheet }),
       h('div', { class: 'sheet-panel glass' },
         h('div', { class: 'sheet-head' },
@@ -3761,7 +3798,7 @@
       const track = player.queue[player.index];
       if (track) {
         toggleFavourite(track);
-        wobble($('#np-heart'));
+        popIn($('#np-heart svg'), 0.6);
       }
     };
     document.querySelectorAll('[data-t]').forEach((element) => {
