@@ -298,6 +298,35 @@
       })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     }
 
+    // Reads a public playlist from a link. Only services that openly allow it can work this way.
+    async function importPlaylistLink(link) {
+      let url;
+      try {
+        url = new URL(String(link).trim());
+      } catch {
+        throw new Error('link-not-valid');
+      }
+      const host = url.hostname.replace(/^www\./, '');
+      if (host === 'deezer.com') {
+        const id = /\/playlist\/(\d+)/.exec(url.pathname)?.[1];
+        if (!id) throw new Error('link-not-playlist');
+        const list = await fetchCatalog(`/playlist/${id}`).catch(() => null);
+        if (!list?.id) throw new Error('playlist-private');
+        const items = (list.tracks?.data || []).filter((item) => item.preview && item.readable !== false);
+        return { name: cleanText(list.title) || 'Deezer playlist', service: 'Deezer', tracks: items.map(toCatalogTrack) };
+      }
+      if (host === 'audius.co') {
+        if (!/\/(playlist|album)\//.test(url.pathname)) throw new Error('link-not-playlist');
+        const found = await fetchOnline(`/resolve?url=${encodeURIComponent(`https://audius.co${url.pathname}`)}`).catch(() => null);
+        const list = Array.isArray(found) ? found[0] : found;
+        if (!list?.id) throw new Error('playlist-private');
+        const tracks = await fetchOnlineTracks(`/playlists/${encodeURIComponent(list.id)}/tracks`);
+        return { name: cleanText(list.playlist_name) || 'Audius playlist', service: 'Audius', tracks };
+      }
+      if (/(^|\.)(spotify\.com|youtube\.com|youtu\.be|apple\.com|soundcloud\.com)$/.test(host)) throw new Error('link-needs-files');
+      throw new Error('link-not-supported');
+    }
+
     let freeList = null;
 
     async function freeAlbums() {
@@ -418,7 +447,7 @@
 
     return {
       searchAll, searchArtists, loadArtist, trending, similar, topArtists, previewUrl, matchSong, matchArtist, artistTop,
-      freeAlbums, searchArchive, loadArchiveAlbum, loadLyrics, offlineDownloadUrl,
+      importPlaylistLink, freeAlbums, searchArchive, loadArchiveAlbum, loadLyrics, offlineDownloadUrl,
     };
   }
 

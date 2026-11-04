@@ -4,9 +4,10 @@
   else root.SolamSocial = factory();
 })(typeof self !== 'undefined' ? self : this, () => {
   const FREE = { active: false, until: null, status: null, provider: null };
-  const DEFAULT_SETTINGS = { checkoutUrl: null, manageUrl: null, price: '$3.99', bankOn: false };
+  const DEFAULT_SETTINGS = { checkoutUrl: null, manageUrl: null, price: '$3.99', bankOn: false, discordId: DISCORD_APP_ID };
   const COMMENT_FIELDS = 'id,track_key,user_id,author,body,created_at';
   const PLAYLIST_FIELDS = 'id,owner,name,tracks,updated_at,shared_playlist_members(user_id)';
+  const DISCORD_APP_ID = '1567638503913816176';
   const CHECKOUT_LINK = /^https:\/\/[a-z0-9-]+\.lemonsqueezy\.com\//;
   const uuid = (value) => {
     const text = String(value);
@@ -21,11 +22,26 @@
     return {
       // Older servers don't have these tables yet, so they simply report that Premium isn't on sale.
       async appSettings() {
-        const rows = await raw('/rest/v1/app_settings?id=eq.1&select=premium_checkout_url,premium_manage_url,premium_price,bank_enabled').catch(() => null);
+        // A server that hasn't been updated yet has no Discord column, and its other settings still count.
+        const settings = 'premium_checkout_url,premium_manage_url,premium_price,bank_enabled';
+        const rows = await raw(`/rest/v1/app_settings?id=eq.1&select=${settings},discord_app_id`).catch(() => raw(`/rest/v1/app_settings?id=eq.1&select=${settings}`)).catch(() => null);
         if (!rows?.[0]) return { ...DEFAULT_SETTINGS };
         const checkoutUrl = CHECKOUT_LINK.test(rows[0].premium_checkout_url || '') ? rows[0].premium_checkout_url : null;
         const manageUrl = CHECKOUT_LINK.test(rows[0].premium_manage_url || '') ? rows[0].premium_manage_url : null;
-        return { checkoutUrl, manageUrl, price: rows[0].premium_price || DEFAULT_SETTINGS.price, bankOn: rows[0].bank_enabled === true };
+        return { checkoutUrl, manageUrl, price: rows[0].premium_price || DEFAULT_SETTINGS.price, bankOn: rows[0].bank_enabled === true, discordId: rows[0].discord_app_id || DISCORD_APP_ID };
+      },
+      saveDiscordId: async (id) => json('/rest/v1/app_settings?id=eq.1', 'PATCH', { discord_app_id: String(id || '').trim() || null }, {}, await requireToken()),
+      async askAi(messages, context) {
+        const token = await validToken().catch(() => null);
+        if (!token) throw new Error('not-signed-in');
+        try {
+          return await json('/functions/v1/solam-ai', 'POST', { messages, context }, {}, token);
+        } catch (error) {
+          if (error.status === 429) throw new Error('ai-limit');
+          if (error.status === 401) throw new Error('not-signed-in');
+          if (error.status === 404) throw new Error('ai-not-ready');
+          throw new Error(/^ai-/.test(error.message) ? error.message : 'ai-failed');
+        }
       },
       async saveAppSettings({ checkoutUrl, manageUrl, price }) {
         await json('/rest/v1/app_settings?id=eq.1', 'PATCH', { premium_checkout_url: checkoutUrl || null, premium_manage_url: manageUrl || null, premium_price: String(price || DEFAULT_SETTINGS.price).slice(0, 20) }, {}, await requireToken());

@@ -20,7 +20,7 @@
   <canvas id="bg"></canvas>
 
   <header id="titlebar">
-    <div class="brand"><img src="icon.png" alt=""><span>Solam</span><span class="beta-tag">BETA</span><button id="update-notice" hidden></button><button id="inbox-button" class="icon-button" title="Notifications" data-t="title" aria-label="Notifications"></button></div>
+    <div class="brand"><svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="brand-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb13e"/><stop offset="1" stop-color="#f4307e"/></linearGradient></defs><circle cx="16" cy="16" r="15" fill="url(#brand-sun)"/><g fill="#fff"><rect x="7.200" y="13" width="2.600" height="6" rx="1.300"/><rect x="11.200" y="10.500" width="2.600" height="11" rx="1.300"/><rect x="15.200" y="7.500" width="2.600" height="17" rx="1.300"/><rect x="19.200" y="10.500" width="2.600" height="11" rx="1.300"/><rect x="23.200" y="13" width="2.600" height="6" rx="1.300"/></g></svg><span>Solam</span><span class="beta-tag">BETA</span><button id="update-notice" hidden></button><button id="inbox-button" class="icon-button" title="Notifications" data-t="title" aria-label="Notifications"></button></div>
     <div class="win-buttons">
       <button id="win-min" title="Minimize" data-t="title" aria-label="Minimize"></button>
       <button id="win-max" title="Maximize" data-t="title" aria-label="Maximize"></button>
@@ -40,9 +40,11 @@
     <section class="page" id="page-upload"><div class="glass panel scroll" id="upload"></div></section>
     <section class="page" id="page-premium"><div class="glass panel scroll" id="premium"></div></section>
     <section class="page" id="page-account"><div class="glass panel scroll" id="account"></div></section>
+    <section class="page" id="page-assistant"><div class="glass panel" id="assistant"></div></section>
     <section class="page" id="page-settings"><div class="glass panel scroll" id="settings"></div></section>
   </main>
 
+  <div id="bc-backdrop" aria-hidden="true"><img id="bc-bg" alt=""></div>
   <section id="bigcover" aria-hidden="true">
     <button class="icon-button" id="bigcover-close" title="Close big cover" data-t="title" aria-label="Close big cover"></button>
     <div class="bc-art">
@@ -101,6 +103,7 @@
     </div>
   </div>
 
+  <button id="ai-orb" class="glass" title="Solam AI" data-t="title" aria-label="Solam AI"></button>
   <div id="toast" role="status"></div>
   <audio id="audio" preload="metadata"></audio>
   <audio id="audio2" preload="metadata"></audio>

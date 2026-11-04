@@ -7,7 +7,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: 1; pointer-event
 
 #titlebar { position: fixed; top: env(safe-area-inset-top, 0px); height: 40px; -webkit-app-region: none; }
 .brand { width: 100%; padding: 0 12px 0 18px; }
-.brand img { width: 22px; height: 22px; }
+.brand-logo { width: 19px; height: 19px; }
 #inbox-button { margin-left: auto; width: 36px; height: 36px; }
 #inbox-button svg { width: 20px; height: 20px; }
 .win-buttons, #np-mini, #np-viz, #np-badge, #np-full { display: none !important; }
@@ -87,6 +87,9 @@ body::before { content: ""; position: fixed; inset: 0; z-index: 1; pointer-event
 .pop-menu { max-width: calc(100vw - 24px); max-height: min(420px, 70dvh); }
 .pop-menu > button { padding: 10px; }
 .glass.sheet-panel { background: linear-gradient(145deg, rgb(var(--tint-rgb)), rgb(var(--tint-rgb))), #0a0c1c; }
+#ai-orb { right: 14px; bottom: calc(var(--tabs) + 72px); width: 44px; height: 44px; }
+.ai-panel.sheet-panel { height: 84dvh; }
+.ai-input { font-size: 16px; }
 #toast { width: calc(100% - 32px); max-width: none; bottom: calc(var(--tabs) + 72px); }
 
 /* Sheets rise from the bottom of the screen. */
@@ -100,7 +103,7 @@ body.big::before { background: rgba(4, 6, 16, 0.4); }
 #bigcover-close { top: 2px; left: 8px; width: 42px; height: 42px; }
 .bc-art { flex: none; height: auto; padding-top: 38px; }
 #bc-viz { display: none; }
-#bc-img { width: min(70vw, 34dvh); border-radius: 20px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 18px 44px rgba(0, 0, 0, 0.5); }
+#bc-img { width: min(70vw, 34dvh); }
 .bc-side { flex: 1 1 auto; height: auto; min-height: 0; padding-top: 12px; }
 #bc-title { font-size: 21px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: none; }
 #bc-artist { margin: 2px 0 8px; font-size: 14px; flex: none; }

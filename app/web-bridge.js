@@ -187,6 +187,8 @@
     onMemoryReport: noop,
     clearPageCache: noop,
     searchArchive: (term) => music.searchArchive(String(term)),
+    playlistLink: (link) => music.importPlaylistLink(link).catch((error) => ({ error: error.message })),
+    discordUpdate: noop,
     freeAlbums: () => music.freeAlbums(),
     archiveAlbum: (id) => music.loadArchiveAlbum(String(id)),
     lyrics: (track) => music.loadLyrics(track).catch(() => null),

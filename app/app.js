@@ -49,6 +49,7 @@
     language: 'auto',
     welcomed: false,
     seenNews: '',
+    discordOn: true,
   };
   const THEMES = [
     ['aurora', 'Aurora', [8, 34, 50]],
@@ -79,7 +80,11 @@
   const PREVIEW_VOLUME_SCALE = 0.55;
   const SITE = 'https://v1sion0coder.github.io/solam/';
   const FREE_DOWNLOADS = 10;
-  const WHATS_NEW_VERSION = '0.9.11';
+  const WHATS_NEW_VERSION = '0.9.13';
+  const AI_KEY = 'solam.ai';
+  const AI_SAVED_MESSAGES = 40;
+  const AI_SENT_MESSAGES = 12;
+  const AI_NAME = 'Solam AI';
   const FREE_FADE_SECONDS = 2;
   const MIX_TICK_MS = 250;
   const SILENCE_LEVEL = 0.006;
@@ -108,6 +113,8 @@
     share: 'M18 16a3 3 0 0 0-2.200 1l-7-4a3 3 0 0 0 0-2l7-4A3 3 0 1 0 15 5v.3l-7 4a3 3 0 1 0 0 5.400l7 4V19a3 3 0 1 0 3-3z',
     repeat: 'M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z',
     shuffle: 'M10.6 9.2 5.400 4 4 5.400l5.200 5.200zM14.500 4l2 2L4 18.600 5.400 20 17.900 7.500l2 2V4zm.300 9.400-1.400 1.400 3.100 3.100-2 2H20v-5.500l-2 2z',
+    spark: 'M12 2.500 14 9l6.500 2-6.500 2-2 6.500-2-6.500-6.500-2L10 9zM19 2l.8 2.200L22 5l-2.200.8L19 8l-.8-2.200L16 5l2.200-.8z',
+    send: 'M3 20.500 21.500 12 3 3.500V10l11 2-11 2z',
     close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z',
     down: 'M6.4 8.4 12 14l5.6-5.6L19 9.8l-7 7-7-7z',
     artists: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6zM18 11a3 3 0 0 0 0-6v6zm1.5 2.2c1.5.9 2.5 2.5 2.5 4.3h-1.5c0-1.6-.8-3-2.2-3.8zM6 11V5a3 3 0 0 0 0 6zm-1.5 2.2-.8.5C2.3 14.5 1.5 15.9 1.5 17.5H0c0-1.8 1-3.4 2.5-4.3z',
@@ -279,6 +286,7 @@
     settings[key] = value;
     saveSettings();
     applySettings();
+    if (key === 'discordOn') updateDiscord();
   }
 
   /* ---------- system audio analysis for the visuals ---------- */
@@ -838,6 +846,7 @@
     }
     if (next.art !== previous.art) onArtChanged();
     if (trackChanged || next.art !== previous.art) updateLockScreen(next);
+    if (trackChanged || next.playing !== previous.playing || next.art !== previous.art) updateDiscord();
     renderPlayer();
   }
 
@@ -847,6 +856,11 @@
   function popIn(element, from = 0.72) {
     if (!element || !settings.extraMotion) return;
     element.animate([{ transform: `scale(${from})` }, { transform: 'scale(1.08)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: 'cubic-bezier(.3,.7,.3,1)' });
+  }
+
+  function updateDiscord() {
+    const { np } = player;
+    api.discordUpdate(settings.discordOn ? premium.settings.discordId : null, { title: np.title, artist: np.artist, art: np.art, playing: np.playing, pos: audio.currentTime || np.pos, dur: np.dur });
   }
 
   function renderPlayer() {
@@ -932,6 +946,7 @@
     const { art } = player.np;
     setImage($('#np-art img'), art);
     setImage($('#bc-img'), art);
+    setImage($('#bc-bg'), art);
     if (!art) return;
     const source = art.startsWith('data:') ? art : await api.imageData(art);
     if (source) extractPalette(source);
@@ -979,13 +994,41 @@
 
   const lyrics = { lines: [], synced: false, token: 0, currentIndex: -1 };
 
+  const WORD_TIME = /<(\d+):(\d+(?:\.\d+)?)>/g;
+
+  // Artists can time each word exactly, like <00:12.50>word. Otherwise each word's time is worked out from its length.
+  function timedWords(line, nextTime) {
+    const parts = line.text.split(/(?=<\d+:\d+(?:\.\d+)?>)/);
+    const exact = [];
+    for (const part of parts) {
+      const match = /^<(\d+):(\d+(?:\.\d+)?)>(.*)$/.exec(part);
+      if (match) match[3].trim().split(/\s+/).filter(Boolean).forEach((text) => exact.push({ text, time: Number(match[1]) * 60 + Number(match[2]) }));
+    }
+    if (exact.length) return exact;
+    const pieces = line.text.split(/\s+/).filter(Boolean);
+    const letters = pieces.reduce((sum, word) => sum + word.length + 1, 0);
+    const end = nextTime ?? line.time + LAST_LINE_SECONDS;
+    const sung = Math.max(MIN_LINE_SECONDS, Math.min(end - line.time, letters * SECONDS_PER_LYRIC_LETTER));
+    let done = 0;
+    return pieces.map((text) => {
+      const word = { text, time: line.time + (done / letters) * sung };
+      done += text.length + 1;
+      return word;
+    }).map((word, i, all) => ({ ...word, end: all[i + 1]?.time ?? line.time + sung }));
+  }
+
   function parseSynced(text) {
     const lines = [];
     for (const raw of text.split('\n')) {
       const match = /^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/.exec(raw.trim());
       if (match) lines.push({ time: Number(match[1]) * 60 + Number(match[2]), text: match[3].trim() });
     }
-    return lines.filter((line) => line.text);
+    const usable = lines.filter((line) => line.text.replace(WORD_TIME, '').trim());
+    usable.forEach((line, i) => {
+      line.words = timedWords(line, usable[i + 1]?.time);
+      line.text = line.words.map((word) => word.text).join(' ');
+    });
+    return usable;
   }
 
   function showLyricNote(message) {
@@ -1020,7 +1063,7 @@
     const box = $('#bc-lyrics');
     if (lyrics.synced) {
       box.classList.remove('plain');
-      box.replaceChildren(...lyrics.lines.map((line) => h('p', { raw: line.text, onclick: () => seekTo(line.time) })));
+      box.replaceChildren(...lyrics.lines.map((line) => h('p', { onclick: () => seekTo(line.time) }, ...line.words.map((word) => h('span', { class: 'word', raw: `${word.text} ` })))));
       updateLyricsPosition();
     } else if (plainText.trim()) {
       box.classList.add('plain');
@@ -1047,16 +1090,32 @@
         line.classList.toggle('current', i === index);
         line.classList.toggle('past', i < index);
       });
+      lyrics.wordIndex = -1;
       const current = box.children[index];
       if (current) box.scrollTop = current.offsetTop - box.clientHeight / 2 + current.offsetHeight / 2;
     }
     const line = lyrics.lines[index];
     if (!line) return;
-    // The lyrics are timed by line, so the sweep across a line's words is a close estimate.
-    const next = lyrics.lines[index + 1]?.time ?? line.time + LAST_LINE_SECONDS;
-    const sung = Math.max(MIN_LINE_SECONDS, Math.min(next - line.time, line.text.length * SECONDS_PER_LYRIC_LETTER));
-    const progress = Math.max(0, Math.min(1, (pos - line.time) / sung));
-    box.children[index]?.style.setProperty('--sweep', `${(progress * 100).toFixed(1)}%`);
+    const { words } = line;
+    let spoken = -1;
+    for (let i = 0; i < words.length; i++) {
+      if (words[i].time <= pos) spoken = i;
+      else break;
+    }
+    const spans = box.children[index]?.children;
+    if (!spans) return;
+    if (spoken !== lyrics.wordIndex) {
+      lyrics.wordIndex = spoken;
+      [...spans].forEach((span, i) => {
+        span.classList.toggle('said', i < spoken);
+        span.classList.toggle('saying', i === spoken);
+      });
+    }
+    if (spoken >= 0) {
+      const word = words[spoken];
+      const end = word.end ?? words[spoken + 1]?.time ?? word.time + 0.6;
+      spans[spoken].style.setProperty('--sweep', `${(Math.min(1, (pos - word.time) / Math.max(0.05, end - word.time)) * 100).toFixed(1)}%`);
+    }
   }
 
   /* ---------- navigation ---------- */
@@ -1069,10 +1128,11 @@
     ['connectors', 'Connectors', 'connectors'],
     ['upload', 'Upload', 'upload'],
     ['premium', 'Premium', 'premium'],
+    ['assistant', 'Solam AI', 'spark'],
   ];
   // A phone has room for five buttons, so the rest live behind More.
   const PHONE_DOCK = ['home', 'artists', 'collection', 'upload'];
-  const PHONE_MORE = [['connectors', 'Connectors', 'connectors'], ['premium', 'Premium', 'premium'], ['account', 'Account', 'account'], ['settings', 'Settings', 'settings']];
+  const PHONE_MORE = [['assistant', 'Solam AI', 'spark'], ['connectors', 'Connectors', 'connectors'], ['premium', 'Premium', 'premium'], ['account', 'Account', 'account'], ['settings', 'Settings', 'settings']];
   const nav = {};
   let activePage = 'home';
 
@@ -1086,6 +1146,8 @@
     document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${id}`));
     closeSheet();
     if (id === 'premium') renderPremium();
+    if (id === 'assistant') renderAssistant();
+    document.body.classList.toggle('on-assistant', id === 'assistant');
     const lit = id === 'artist' ? 'artists' : isWeb && PHONE_MORE.some(([page]) => page === id) ? 'more' : id;
     Object.entries(nav).forEach(([key, button]) => button.classList.toggle('active', key === lit));
     moveDockGlider();
@@ -2160,10 +2222,50 @@
       status);
   }
 
+  const LINK_ERRORS = {
+    'link-not-valid': 'That doesn’t look like a link.',
+    'link-not-playlist': 'That link isn’t a playlist.',
+    'playlist-private': 'This playlist is private or doesn’t exist.',
+    'link-needs-files': 'That app doesn’t let other apps read its playlists from a link. Use the steps below to import your files instead.',
+    'link-not-supported': 'Paste a link from Deezer or Audius.',
+  };
+
+  function playlistLinkBox() {
+    const input = h('input', { class: 'search', type: 'url', placeholder: 'Paste a playlist link', 'aria-label': 'Paste a playlist link' });
+    const status = h('p', { class: 'status-note', role: 'status' });
+    const add = h('button', {
+      class: 'button primary',
+      text: 'Bring it in',
+      onclick: async () => {
+        if (!input.value.trim()) return;
+        add.disabled = true;
+        status.textContent = t('Reading your playlist…');
+        const result = await api.playlistLink(input.value).catch((error) => ({ error: error.message }));
+        add.disabled = false;
+        if (result.error) {
+          status.textContent = t(LINK_ERRORS[result.error] || 'Couldn’t read that playlist. Check your internet connection.');
+          return;
+        }
+        const tracks = result.tracks.map(storableTrack);
+        saved.playlists.push({ id: crypto.randomUUID(), name: result.name.slice(0, 60), tracks });
+        storeSaved();
+        input.value = '';
+        status.textContent = t('{name} was added to Library with {n} songs.', { name: result.name, n: tracks.length });
+        popIn(add);
+      },
+    });
+    return h('div', { class: 'setting-group' },
+      h('h3', { text: 'Paste a playlist link' }),
+      h('p', { class: 'status-note', text: 'Works with public Deezer and Audius playlists.' }),
+      h('div', { class: 'actions' }, input, add),
+      status);
+  }
+
   function renderConnectors() {
     $('#connectors').replaceChildren(
       h('h1', { class: 'page-title', text: 'Connectors' }),
       h('p', { class: 'page-sub', text: 'Bring your playlists and artists from other apps. Tap a service to start.' }),
+      playlistLinkBox(),
       ...CONNECTORS.map(connectorCard),
       h('p', { class: 'status-note', text: 'Solam never asks for your passwords. Imported songs play as 30-second previews, or in full when Solam has them.' }));
   }
@@ -2197,6 +2299,7 @@
     const [state, config, request] = await Promise.all([api.server('premiumState'), api.server('appSettings'), api.server('myPremiumRequest')]);
     if (state.ok) Object.assign(premium, state.value);
     if (config.ok) premium.settings = config.value;
+    updateDiscord();
     premium.request = request.ok ? request.value : null;
     celebrateNewPremium();
     document.body.classList.toggle('has-premium', premium.active);
@@ -2846,6 +2949,7 @@
         richTransitions() ? segmented('transitionStyle', 'Transition style', 'Auto picks the best style for each song’s genre', TRANSITION_STYLES) : null,
         fixedVolume || !hasPremium() ? null : slider('crossfade', 'Transition length', '', 1, 12, 1, (value) => `${value}s`),
         toggle('autoplay', 'Autoplay similar songs', 'Keeps the music going when your list ends'),
+        isWeb ? null : toggle('discordOn', 'Show on Discord', 'Your Discord status shows the song you’re playing'),
         sleepChoices()),
 
       h('div', { class: 'setting-group' },
@@ -3001,13 +3105,10 @@
   }
 
   const WHATS_NEW_STEPS = [
-    ['A fresh new look', 'A new Home, new songs from Solam artists up front, and a menu that fits your phone.', 'fresh'],
-    ['Real liquid glass', 'The background now bends at the edges of the glass, on your phone too.', 'lens'],
-    ['Better with friends', 'Comment on songs, build playlists together, and share any song with a link, QR code or story picture.', 'social'],
-    ['More music, more control', 'Free albums to explore, plus repeat and shuffle buttons in the player.', 'search'],
-    ['Premium got serious', 'Play next, Up next, and DJ mixes between songs on Windows.', 'mix'],
-    ['Make it your profile', 'Add a picture and banner in Account. With Premium, they can move.', 'profile'],
-    ['Hello, hola, olá, hallo', 'Solam now speaks Spanish, Portuguese and German too. Updates install themselves on Windows.', 'languages'],
+    ['Meet Solam AI', 'Ask for playlists, music, better settings or anything else. It always asks before changing things.', 'social'],
+    ['Lyrics, word by word', 'Each word now lights up as it’s sung, on a cover that melts into the background.', 'languages'],
+    ['Bring your playlists', 'Paste a Deezer or Audius playlist link in Connectors, and it’s in your Library.', 'search'],
+    ['Show it on Discord', 'On Windows, your Discord status can show the song you’re playing.', 'mix'],
   ];
 
   const showWelcome = () => showTour(WELCOME_STEPS, 'Start listening');
@@ -3607,6 +3708,22 @@
     if (same) note.textContent = t('A famous song has this title: {artist}', { artist: same.artist });
   }
 
+  function discordAdminBox() {
+    const field = h('input', { class: 'field', inputmode: 'numeric', maxlength: 22, 'aria-label': 'Discord application ID', value: premium.settings.discordId || '' });
+    return h('div', { class: 'setting-group' },
+      h('h3', { text: 'Discord status' }),
+      labelled('Discord application ID', 'Everyone’s Discord status switches on as soon as this is saved.', field),
+      h('div', { class: 'actions' }, h('button', {
+        class: 'button',
+        text: 'Save',
+        onclick: async () => {
+          const result = await api.server('saveDiscordId', field.value);
+          toast(result.ok ? 'Saved.' : errorMessage(result));
+          refreshPremium();
+        },
+      })));
+  }
+
   async function renderAdminTools(box) {
     const support = await api.server('supportMessages');
     const news = await api.server('news');
@@ -3641,6 +3758,7 @@
           h('button', { class: 'button', text: 'Give 1 month', onclick: () => gift(31) }),
           h('button', { class: 'button', text: 'Give 1 year', onclick: () => gift(366) }),
           h('button', { class: 'button', text: 'Take back', onclick: () => gift(0) }))),
+      discordAdminBox(),
       h('h2', { class: 'section-title', text: 'App news' }),
       h('div', { class: 'setting-group' },
         newsTitle,
@@ -3662,6 +3780,257 @@
       ...(support.ok ? support.value : []).map((item) => h('div', { class: 'review-row' },
         h('div', { class: 'track-text wrap' }, h('strong', { raw: item.contact || t('No email given') }), h('span', { raw: item.body })),
         h('button', { class: 'button small', text: 'Done', onclick: async () => { await api.server('clearSupport', item.id); renderAdminTools(box); } }))));
+  }
+
+  /* ---------- Solam AI ---------- */
+
+  const AI_SUGGESTIONS = ['Make me a chill playlist', 'Which settings suit my PC?', 'What can you do?'];
+  const AI_ERRORS = {
+    'ai-limit': 'You’ve used all your Solam AI messages for today. They come back tomorrow, and Premium has many more.',
+    'ai-busy': 'Solam AI is very busy right now. Please try again in a minute.',
+    'ai-not-ready': 'Solam AI isn’t switched on yet. Please try again later.',
+    'ai-failed': 'Solam AI couldn’t answer just now. Please try again.',
+  };
+  const AI_SETTINGS = {
+    theme: (value) => THEMES.some(([id]) => id === value) && value,
+    quality: (value) => ['low', 'medium', 'high'].includes(value) && value,
+    tint: (value) => numberBetween(value, 0, 1),
+    blur: (value) => numberBetween(value, 0, 50),
+    refraction: (value) => numberBetween(value, 0, 80),
+    radius: (value) => numberBetween(value, 8, 44),
+    speed: (value) => numberBetween(value, 0, 2.5),
+    brightness: (value) => numberBetween(value, 0.4, 1.4),
+    crossfade: (value) => numberBetween(value, 1, 12),
+  };
+  const AI_SWITCHES = ['crossfadeOn', 'autoplay', 'extraMotion', 'rippleOn', 'beatOn', 'wobbleOn', 'shineOn', 'discordOn'];
+  const ai = { messages: loadAi(), busy: false, left: null, box: null };
+
+  function numberBetween(value, min, max) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= min && number <= max ? number : false;
+  }
+
+  function loadAi() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(AI_KEY) || '[]');
+      return Array.isArray(stored) ? stored : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function storeAi() {
+    ai.messages = ai.messages.slice(-AI_SAVED_MESSAGES);
+    try {
+      localStorage.setItem(AI_KEY, JSON.stringify(ai.messages));
+    } catch {
+      // The chat simply won't be there next time.
+    }
+  }
+
+  function aiContext() {
+    return {
+      language: window.solamLanguage,
+      device: isWeb ? 'phone or browser' : 'Windows PC',
+      page: activePage,
+      nowPlaying: player.np.title ? `${player.np.title} by ${player.np.artist}` : null,
+      playlists: saved.playlists.slice(0, 25).map((list) => ({ name: list.name, songs: list.tracks.length })),
+      favourites: saved.favorites.length,
+      following: saved.follows.slice(0, 10).map((artist) => artist.name),
+      premium: premium.active,
+      settings: { theme: settings.theme, quality: settings.quality, tint: settings.tint, blur: settings.blur, extraMotion: settings.extraMotion, crossfadeOn: settings.crossfadeOn, autoplay: settings.autoplay },
+      memory: lastMemory,
+      cores: navigator.hardwareConcurrency || null,
+      deviceMemoryGb: navigator.deviceMemory || null,
+      screen: `${window.screen.width}x${window.screen.height}`,
+    };
+  }
+
+  const findList = (name) => saved.playlists.find((list) => list.name.toLowerCase() === String(name).trim().toLowerCase());
+
+  function aiSongs(songs) {
+    return (Array.isArray(songs) ? songs : []).slice(0, 40).filter((song) => song?.title && song?.artist).map((song) => ({
+      source: 'imported', id: `${song.artist}|${song.title}`, title: String(song.title).slice(0, 120), artist: String(song.artist).slice(0, 80), album: '', art: '', thumb: '', duration: 0,
+    }));
+  }
+
+  // Says in plain words what an action will do, or returns null when it can't be done.
+  function describeAction({ name, args = {} }) {
+    const list = args.playlist ? findList(args.playlist) : null;
+    if (name === 'make_playlist') return aiSongs(args.songs).length && args.name ? t('Create the playlist “{name}” with {n} songs', { name: args.name, n: aiSongs(args.songs).length }) : null;
+    if (name === 'add_to_playlist') return list && aiSongs(args.songs).length ? t('Add {n} songs to “{name}”', { name: list.name, n: aiSongs(args.songs).length }) : null;
+    if (name === 'rename_playlist') return list && args.name ? t('Rename “{name}” to “{to}”', { name: list.name, to: args.name }) : null;
+    if (name === 'sort_playlist') return list ? t(args.by === 'artist' ? 'Sort “{name}” by artist' : 'Sort “{name}” by song title', { name: list.name }) : null;
+    if (name === 'remove_duplicates') return list ? t('Remove repeated songs from “{name}”', { name: list.name }) : null;
+    if (name === 'delete_playlist') return list ? t('Delete the playlist “{name}”', { name: list.name }) : null;
+    if (name === 'play_music') return args.query ? t('Play {name}', { name: args.query }) : null;
+    if (name === 'change_setting') {
+      const allowed = AI_SWITCHES.includes(args.key) ? typeof args.value === 'boolean' : AI_SETTINGS[args.key]?.(args.value) !== false && Boolean(AI_SETTINGS[args.key]);
+      return allowed ? t('Change {name} to {to}', { name: args.key, to: String(args.value) }) : null;
+    }
+    return null;
+  }
+
+  async function runAction({ name, args = {} }) {
+    const list = args.playlist ? findList(args.playlist) : null;
+    if (name === 'make_playlist') {
+      saved.playlists.push({ id: crypto.randomUUID(), name: String(args.name).slice(0, 60), tracks: aiSongs(args.songs) });
+    } else if (name === 'add_to_playlist') {
+      aiSongs(args.songs).forEach((track) => { if (!list.tracks.some((item) => trackKey(item) === trackKey(track))) list.tracks.push(track); });
+    } else if (name === 'rename_playlist') {
+      list.name = String(args.name).slice(0, 60);
+    } else if (name === 'sort_playlist') {
+      const field = args.by === 'artist' ? 'artist' : 'title';
+      list.tracks.sort((a, b) => String(a[field]).localeCompare(String(b[field])));
+    } else if (name === 'remove_duplicates') {
+      const seen = new Set();
+      list.tracks = list.tracks.filter((track) => {
+        const key = `${track.title}|${track.artist}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    } else if (name === 'delete_playlist') {
+      saved.playlists = saved.playlists.filter((item) => item !== list);
+    } else if (name === 'play_music') {
+      const found = await api.search(String(args.query));
+      if (!found.tracks.length) throw new Error('not-found');
+      playQueue(found.tracks, 0);
+      return;
+    } else if (name === 'change_setting') {
+      changeSetting(args.key, AI_SWITCHES.includes(args.key) ? args.value : AI_SETTINGS[args.key](args.value));
+      // The settings page draws its controls once, so it is redrawn to show the new value.
+      $('#settings').replaceChildren();
+      if (activePage === 'settings') buildSettings();
+      return;
+    }
+    storeSaved();
+    if (activePage === 'collection') renderCollection();
+  }
+
+  function actionCard(message, action) {
+    const text = describeAction(action);
+    if (!text) return null;
+    const answer = async (yes) => {
+      action.state = yes ? 'working' : 'no';
+      drawAi();
+      if (yes) {
+        try {
+          await runAction(action);
+          action.state = 'done';
+        } catch {
+          action.state = 'failed';
+        }
+      }
+      storeAi();
+      drawAi();
+    };
+    const songs = aiSongs(action.args?.songs);
+    const labels = { done: 'Done', no: 'Not done', failed: 'That didn’t work', working: 'Working…' };
+    return h('div', { class: `ai-card${action.state ? ' answered' : ''}` },
+      h('strong', { raw: text }),
+      songs.length ? h('ul', { class: 'ai-songs' }, ...songs.slice(0, 6).map((song) => h('li', { raw: `${song.title} · ${song.artist}` })), songs.length > 6 ? h('li', { text: 'and {n} more', values: { n: songs.length - 6 } }) : null) : null,
+      action.state ? h('span', { class: `ai-state ${action.state}`, text: labels[action.state] }) : h('div', { class: 'actions' },
+        h('button', { class: 'button small primary', text: 'Yes, do it', onclick: () => answer(true) }),
+        h('button', { class: 'button small', text: 'No', onclick: () => answer(false) })));
+  }
+
+  function aiBubble(message) {
+    const assistant = message.role === 'assistant';
+    return h('div', { class: `ai-row ${assistant ? 'from-ai' : 'from-you'}` },
+      assistant ? h('span', { class: 'ai-mark' }, icon('spark')) : null,
+      h('div', { class: 'ai-content' },
+        message.content ? h('div', { class: `ai-bubble${message.failed ? ' failed' : ''}`, raw: message.content }) : null,
+        ...(message.actions || []).map((action) => actionCard(message, action))));
+  }
+
+  function drawAi() {
+    const box = ai.box;
+    if (!box || !box.isConnected) return;
+    const list = box.querySelector('.ai-messages');
+    const atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+    const empty = !ai.messages.length;
+    list.replaceChildren(
+      empty ? h('div', { class: 'ai-hello' },
+        h('span', { class: 'ai-hello-mark' }, icon('spark')),
+        h('h2', { text: 'How can I help?' }),
+        h('p', { text: 'Playlists, music, settings or any question. I always ask before changing anything.' }),
+        h('div', { class: 'ai-suggestions' }, ...AI_SUGGESTIONS.map((text) => h('button', { class: 'chip', text, onclick: () => sendToAi(t(text)) })))) : null,
+      ...ai.messages.map(aiBubble),
+      ai.busy ? h('div', { class: 'ai-row from-ai' }, h('span', { class: 'ai-mark' }, icon('spark')), h('div', { class: 'ai-typing' }, h('i'), h('i'), h('i'))) : null);
+    if (atEnd || ai.busy) list.scrollTop = list.scrollHeight;
+    const left = box.querySelector('.ai-left');
+    left.textContent = ai.left === null ? '' : t('{n} messages left today', { n: ai.left });
+  }
+
+  async function sendToAi(text) {
+    const clean = String(text).trim();
+    if (!clean || ai.busy) return;
+    ai.messages.push({ role: 'user', content: clean.slice(0, 1500) });
+    ai.busy = true;
+    storeAi();
+    drawAi();
+    const history = ai.messages.filter((message) => message.content && !message.failed).slice(-AI_SENT_MESSAGES).map(({ role, content }) => ({ role, content }));
+    const result = await api.server('askAi', history, aiContext());
+    ai.busy = false;
+    if (result.ok) {
+      ai.left = result.value.left ?? ai.left;
+      const actions = (result.value.actions || []).filter((action) => describeAction(action));
+      ai.messages.push({ role: 'assistant', content: result.value.reply || (actions.length ? '' : t('Sorry, I don’t have an answer for that.')), actions });
+    } else {
+      ai.messages.push({ role: 'assistant', failed: true, content: t(AI_ERRORS[result.error] || (result.error === 'not-signed-in' ? 'Please sign in again.' : AI_ERRORS['ai-failed'])) });
+    }
+    storeAi();
+    drawAi();
+  }
+
+  function aiChat() {
+    if (!account.user) {
+      return h('div', { class: 'ai-chat' }, h('div', { class: 'ai-messages' }, h('div', { class: 'ai-hello' },
+        h('span', { class: 'ai-hello-mark' }, icon('spark')),
+        h('h2', { raw: AI_NAME }),
+        h('p', { text: 'Sign in for free to chat with Solam AI.' }),
+        h('button', { class: 'button primary', text: 'Sign in', onclick: () => showPage('account') }))));
+    }
+    const input = h('textarea', { class: 'ai-input', rows: 1, maxlength: 1500, placeholder: 'Ask Solam AI', 'aria-label': 'Ask Solam AI' });
+    const submit = () => {
+      const text = input.value;
+      input.value = '';
+      input.style.height = '';
+      sendToAi(text);
+    };
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(120, input.scrollHeight)}px`;
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        submit();
+      }
+    });
+    const box = h('div', { class: 'ai-chat' },
+      h('div', { class: 'ai-messages', role: 'log' }),
+      h('div', { class: 'ai-compose' },
+        input,
+        h('button', { class: 'icon-button ai-send', title: 'Send', 'aria-label': 'Send', onclick: submit }, icon('send'))),
+      h('div', { class: 'ai-foot' },
+        h('span', { class: 'ai-left' }),
+        ai.messages.length ? h('button', { text: 'Clear chat', onclick: () => { ai.messages = []; storeAi(); if (activePage === 'assistant') renderAssistant(); else showAiSheet(); } }) : null,
+        h('span', { text: 'Solam AI can make mistakes. Don’t share private information.' })));
+    ai.box = box;
+    return box;
+  }
+
+  function renderAssistant() {
+    $('#assistant').replaceChildren(aiChat());
+    drawAi();
+  }
+
+  function showAiSheet() {
+    openSheet(AI_NAME, aiChat());
+    document.querySelector('#sheet .sheet-panel').classList.add('ai-panel');
+    drawAi();
   }
 
   /* ---------- paying by bank transfer ---------- */
@@ -4020,6 +4389,8 @@
       };
     }
     setIcon($('#inbox-button'), 'bell');
+    setIcon($('#ai-orb'), 'spark');
+    $('#ai-orb').onclick = showAiSheet;
     $('#inbox-button').onclick = showInbox;
     $('#bc-next').textContent = t('Up next');
     $('#bc-comments').textContent = t('Comments');
