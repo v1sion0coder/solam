@@ -4,10 +4,10 @@
   else root.SolamSocial = factory();
 })(typeof self !== 'undefined' ? self : this, () => {
   const FREE = { active: false, until: null, status: null, provider: null };
+  const DISCORD_APP_ID = '1567638503913816176';
   const DEFAULT_SETTINGS = { checkoutUrl: null, manageUrl: null, price: '$3.99', bankOn: false, discordId: DISCORD_APP_ID };
   const COMMENT_FIELDS = 'id,track_key,user_id,author,body,created_at';
   const PLAYLIST_FIELDS = 'id,owner,name,tracks,updated_at,shared_playlist_members(user_id)';
-  const DISCORD_APP_ID = '1567638503913816176';
   const CHECKOUT_LINK = /^https:\/\/[a-z0-9-]+\.lemonsqueezy\.com\//;
   const uuid = (value) => {
     const text = String(value);
