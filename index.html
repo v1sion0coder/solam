@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Solam: free music app with no ads, for Windows, iPhone and Android</title>
-  <meta name="description" content="Solam is a free music app with no ads and a liquid glass look. Discover independent artists, upload your own songs, and share playlists with friends. For Windows, iPhone and Android.">
+  <meta name="description" content="Solam is a free music app with no ads and a liquid glass look. For Windows, Android and iPhone.">
   <link rel="canonical" href="https://v1sion0coder.github.io/solam/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Solam">
   <meta property="og:title" content="Solam: free music with no ads">
-  <meta property="og:description" content="A free liquid glass music app. Discover independent artists, upload your songs, and share playlists with friends.">
+  <meta property="og:description" content="A free liquid glass music app for Windows, Android and iPhone.">
   <meta property="og:url" content="https://v1sion0coder.github.io/solam/">
   <meta property="og:image" content="https://v1sion0coder.github.io/solam/icon.png">
   <meta name="twitter:card" content="summary">
@@ -24,63 +24,42 @@
   <script src="home.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="home">
   <main>
     <a class="brand" href="./"><img src="icon.png" alt="">Solam <span class="beta">BETA</span></a>
-    <section class="glass">
+    <section class="glass hero">
       <h1>Your music, behind liquid glass.</h1>
-      <p>A free music app with no ads, animated themes, synced lyrics and artists you can follow. Upload your own songs, share playlists with friends, and get shown on the Home page.</p>
-      <p class="note">This is a beta version, so some things may not work yet.</p>
-
-      <h2>Windows 10 and 11</h2>
-      <a class="button" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam-Setup.exe">Download for Windows</a>
-
-      <h2>iPhone</h2>
-      <a class="button" href="app/">Open Solam for iPhone</a>
-      <ol>
-        <li>Open that link in <strong>Safari</strong>.</li>
-        <li>Tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
-        <li>Open Solam from your Home Screen, like any other app.</li>
-      </ol>
-      <p class="note">It isn't on the App Store yet. On iPhone, volume is set with your phone's buttons.</p>
-
-      <h2>Android</h2>
-      <a class="button" href="app/">Open Solam for Android</a>
-      <ol>
-        <li>Open that link in <strong>Chrome</strong>.</li>
-        <li>Tap the <strong>⋮</strong> menu, then <strong>Add to Home screen</strong> or <strong>Install app</strong>.</li>
-        <li>Open Solam from your Home screen, like any other app.</li>
-      </ol>
-
-      <h2>What's inside</h2>
-      <ul>
-        <li>Free songs from independent artists and legal free albums</li>
-        <li>30-second previews of famous artists</li>
-        <li>Bring your playlists and favourite artists from other music services</li>
-        <li>Solam AI, which makes playlists and suggests settings, and always asks before changing anything</li>
-        <li>Comments, shared playlists and song links with QR codes</li>
-        <li>Animated themes in English, Russian, Spanish, Portuguese and German</li>
-      </ul>
-
-      <h2>Is Solam safe?</h2>
-      <p>No ads, and your data isn't sold. Solam never asks for your passwords from other music apps. Each installer is scanned with Windows Defender before release. Only download Solam from this site or <a href="https://github.com/v1sion0coder/solam/releases/latest">its GitHub page</a>.</p>
-
-      <h2>Why Windows shows a warning</h2>
-      <p>Windows warns about new apps that don't yet have a paid digital signature and a download history, which is the case for Solam. If you trust this site, click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
-      <p class="note">You can check that your download is the original. In PowerShell, run <code>Get-FileHash Solam-Setup.exe</code> and compare it with:<br><code class="hash">7B96867D0886C4F05A458D6F1A740DFB076842F9B0C9A8E6D8BEA9A0E945C522</code></p>
-
-      <div class="ru" lang="ru">
-        <h2>По-русски</h2>
-        <p>Solam — бесплатный музыкальный плеер для Windows 10 и 11 и iPhone. Это бета-версия, поэтому что-то может пока работать не так.</p>
-        <a class="button ghost" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam-Setup.exe">Скачать для Windows</a>
-        <a class="button ghost" href="app/">Открыть для iPhone</a>
-        <p><strong>Android:</strong> откройте ссылку в Chrome, нажмите меню ⋮, затем «Добавить на главный экран» или «Установить приложение».</p>
-        <p><strong>iPhone:</strong> откройте ссылку в Safari, нажмите «Поделиться», затем «На экран „Домой“» и «Добавить».</p>
-        <p><strong>Windows:</strong> система предупреждает о новых приложениях без платной цифровой подписи. Если вы доверяете этому сайту, нажмите «Подробнее», затем «Выполнить в любом случае».</p>
+      <p class="lead">Free. No ads.</p>
+      <div class="downloads">
+        <a class="button" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam-Setup.exe">Windows</a>
+        <a class="button" href="https://github.com/v1sion0coder/solam/releases/latest/download/Solam.apk">Android</a>
+        <a class="button" href="app/">iPhone</a>
       </div>
     </section>
+
+    <section class="help">
+      <details>
+        <summary>iPhone: how to install</summary>
+        <p>Open the link in <strong>Safari</strong>, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+      </details>
+      <details>
+        <summary>Android: how to install</summary>
+        <p>Open the downloaded file. If Android asks, allow installing from your browser. Updates come by themselves.</p>
+      </details>
+      <details>
+        <summary>Windows or Android shows a warning</summary>
+        <p>New apps without a paid signature get a warning. If you trust this site, on Windows click <strong>More info</strong>, then <strong>Run anyway</strong>. Only download Solam from here.</p>
+        <p class="note">Windows file fingerprint (SHA-256):<br><code class="hash">2039057B715D1D27C6BFF481346EDB30A73BDE9E538F0F07340573DC7BC40990</code></p>
+        <p class="note">Android file fingerprint (SHA-256):<br><code class="hash">B53AB895CF46C0148FBCB5274B00DD05764E34582502A35993489735E4C5462B</code></p>
+      </details>
+      <details lang="ru">
+        <summary>По-русски</summary>
+        <p>Бесплатная музыка без рекламы. Выберите своё устройство выше. На iPhone откройте ссылку в Safari, нажмите «Поделиться», затем «На экран „Домой“».</p>
+      </details>
+    </section>
+
     <footer>
-      <a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="mailto:salam0support@gmail.com">salam0support@gmail.com</a>
+      <a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="https://github.com/v1sion0coder/solam">GitHub</a><a href="mailto:salam0support@gmail.com">Support</a>
     </footer>
   </main>
 </body>

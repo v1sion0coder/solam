@@ -2433,6 +2433,7 @@
             text: 'Sign out',
             onclick: async () => {
               await api.server('signOut');
+              clearAi();
               renderAccount();
             },
           }))),
@@ -2525,6 +2526,7 @@
               const result = await api.server('deleteAccount');
               if (result.ok) {
                 toast('Your account was deleted.');
+                clearAi();
                 renderAccount();
               } else {
                 toast(errorMessage(result));
@@ -3803,11 +3805,40 @@
     crossfade: (value) => numberBetween(value, 1, 12),
   };
   const AI_SWITCHES = ['crossfadeOn', 'autoplay', 'extraMotion', 'rippleOn', 'beatOn', 'wobbleOn', 'shineOn', 'discordOn'];
+  const AI_SETTING_NAMES = {
+    theme: 'Theme', quality: 'Quality', tint: 'Clear to tinted', blur: 'Frost', refraction: 'Edge bending', radius: 'Corner roundness', speed: 'Animation speed', brightness: 'Theme brightness', crossfade: 'Transition length',
+    crossfadeOn: 'Song transitions', autoplay: 'Autoplay similar songs', extraMotion: 'Extra animations', rippleOn: 'Mouse ripples', beatOn: 'Pulse to the beat', wobbleOn: 'Liquid wobble', shineOn: 'Reflections', discordOn: 'Show on Discord',
+  };
   const ai = { messages: loadAi(), busy: false, left: null, box: null };
 
   function numberBetween(value, min, max) {
+    if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return false;
     const number = Number(value);
     return Number.isFinite(number) && number >= min && number <= max ? number : false;
+  }
+
+  // The AI sometimes writes true and false as words.
+  const aiSwitch = (value) => (value === true || value === 'true' ? true : value === false || value === 'false' ? false : null);
+
+  // The chat stays on this device, so the next person to sign in here must not see it.
+  function clearAi() {
+    ai.messages = [];
+    ai.left = null;
+    storeAi();
+  }
+
+  function aiSettingAllowed({ key, value }) {
+    if (key === 'discordOn' && isWeb) return false;
+    if (key === 'crossfade' && !hasPremium()) return false;
+    if (AI_SWITCHES.includes(key)) return aiSwitch(value) !== null;
+    return Boolean(AI_SETTINGS[key]) && AI_SETTINGS[key](value) !== false;
+  }
+
+  function describeSetting({ key, value }) {
+    const name = t(AI_SETTING_NAMES[key]);
+    if (AI_SWITCHES.includes(key)) return t(aiSwitch(value) ? 'Turn {name} on' : 'Turn {name} off', { name });
+    const shown = key === 'theme' ? t(THEMES.find(([id]) => id === value)[1]) : key === 'quality' ? t(value[0].toUpperCase() + value.slice(1)) : String(value);
+    return t('Change {name} to {to}', { name, to: shown });
   }
 
   function loadAi() {
@@ -3864,10 +3895,7 @@
     if (name === 'remove_duplicates') return list ? t('Remove repeated songs from “{name}”', { name: list.name }) : null;
     if (name === 'delete_playlist') return list ? t('Delete the playlist “{name}”', { name: list.name }) : null;
     if (name === 'play_music') return args.query ? t('Play {name}', { name: args.query }) : null;
-    if (name === 'change_setting') {
-      const allowed = AI_SWITCHES.includes(args.key) ? typeof args.value === 'boolean' : AI_SETTINGS[args.key]?.(args.value) !== false && Boolean(AI_SETTINGS[args.key]);
-      return allowed ? t('Change {name} to {to}', { name: args.key, to: String(args.value) }) : null;
-    }
+    if (name === 'change_setting') return aiSettingAllowed(args) ? describeSetting(args) : null;
     return null;
   }
 
@@ -3898,7 +3926,7 @@
       playQueue(found.tracks, 0);
       return;
     } else if (name === 'change_setting') {
-      changeSetting(args.key, AI_SWITCHES.includes(args.key) ? args.value : AI_SETTINGS[args.key](args.value));
+      changeSetting(args.key, AI_SWITCHES.includes(args.key) ? aiSwitch(args.value) : AI_SETTINGS[args.key](args.value));
       // The settings page draws its controls once, so it is redrawn to show the new value.
       $('#settings').replaceChildren();
       if (activePage === 'settings') buildSettings();
