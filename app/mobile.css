@@ -139,3 +139,7 @@ body.big.idle #player { opacity: 1; transform: none; }
   body.big .np-center { order: 0; width: auto; flex-basis: auto; }
   body.big .np-time { display: none; }
 }
+
+.stat-card { padding: 11px; }
+.stat-card strong { font-size: 21px; }
+.stat-card span { font-size: 11.5px; }

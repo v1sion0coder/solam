@@ -50,6 +50,7 @@
     welcomed: false,
     seenNews: '',
     discordOn: true,
+    eqPreset: 'flat',
   };
   const THEMES = [
     ['aurora', 'Aurora', [8, 34, 50]],
@@ -80,7 +81,21 @@
   const PREVIEW_VOLUME_SCALE = 0.55;
   const SITE = 'https://v1sion0coder.github.io/solam/';
   const FREE_DOWNLOADS = 10;
-  const WHATS_NEW_VERSION = '0.9.13';
+  const WHATS_NEW_VERSION = '0.9.16';
+  const RESUME_KEY = 'solam.resume';
+  const RESUME_SAVE_MS = 5000;
+  const STATS_KEY = 'solam.stats';
+  const STATS_SONG_LIMIT = 300;
+  const STATS_SAVE_SECONDS = 15;
+  const SEARCHES_KEY = 'solam.searches';
+  const SEARCHES_LIMIT = 5;
+  const SEARCH_WAIT_MS = 450;
+  const SEARCH_REMEMBER_MS = 2000;
+  const MIX_SIZE = 40;
+  const KEY_SEEK_SECONDS = 5;
+  const KEY_VOLUME_STEP = 0.05;
+  const EQ_BANDS = [60, 250, 1000, 4000, 12000];
+  const EQ_PRESETS = { flat: [0, 0, 0, 0, 0], bass: [6, 3, 0, 0, 0], vocals: [-2, 0, 3, 3, 0], bright: [0, 0, 0, 3, 5] };
   const AI_KEY = 'solam.ai';
   const AI_SAVED_MESSAGES = 40;
   const AI_SENT_MESSAGES = 12;
@@ -287,6 +302,7 @@
     saveSettings();
     applySettings();
     if (key === 'discordOn') updateDiscord();
+    if (key === 'eqPreset') applyEq();
   }
 
   /* ---------- system audio analysis for the visuals ---------- */
@@ -365,7 +381,7 @@
   /* ---------- player ---------- */
 
   const NOTHING = { source: null, title: '', artist: '', album: '', art: '', pos: 0, dur: 0, playing: false, badge: '', lossless: false };
-  const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0, repeat: 'off', shuffle: false, unshuffled: null };
+  const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0, repeat: 'off', shuffle: false, unshuffled: null, resume: null, resumeAt: 0, listened: false, lastPos: 0, unsaved: 0, savedAt: 0 };
   const fade = { timer: 0, active: false, from: null, to: null };
   const sleep = { timer: 0, ends: 0, minutes: 0 };
 
@@ -412,6 +428,11 @@
       source: context.createMediaElementSource(deck),
       high: filter('highpass', 20),
       low: filter('lowpass', 20000),
+      eq: EQ_BANDS.map((frequency) => {
+        const band = filter('peaking', frequency);
+        band.Q.value = 1;
+        return band;
+      }),
       trim: gain(1),
       level: gain(deck.volume),
       echoSend: gain(0),
@@ -426,7 +447,10 @@
     node.meter.fftSize = mix.samples.length;
     node.source.connect(node.high);
     node.high.connect(node.low);
-    node.low.connect(node.trim);
+    node.eq.reduce((from, band) => {
+      from.connect(band);
+      return band;
+    }, node.low).connect(node.trim);
     node.trim.connect(node.level);
     node.trim.connect(node.meter);
     node.level.connect(context.destination);
@@ -438,8 +462,14 @@
     node.echoLevel.connect(context.destination);
     deck.volume = 1;
     mix.decks.set(deck, node);
+    applyEq();
     if (!mix.timer) mix.timer = setInterval(listenToMix, MIX_TICK_MS);
     return node;
+  }
+
+  function applyEq() {
+    const gains = (hasPremium() && EQ_PRESETS[settings.eqPreset]) || EQ_PRESETS.flat;
+    mix.decks.forEach((node) => node.eq.forEach((band, i) => { band.gain.value = gains[i]; }));
   }
 
   function setDeckLevel(deck, value) {
@@ -590,6 +620,7 @@
   async function loadCurrent(fadeSeconds = transitionsOn() ? MANUAL_FADE_SECONDS : 0) {
     let track = player.queue[player.index];
     if (!track) return;
+    player.resume = null;
     if (track.source === 'imported') {
       const asked = track;
       setNowPlaying({ source: 'imported', title: track.title, artist: track.artist, art: '', pos: 0, dur: 0, playing: false, badge: t('Finding song…'), lossless: false });
@@ -613,6 +644,9 @@
     }
     recordRecent(track);
     player.counted = false;
+    player.listened = false;
+    player.lastPos = 0;
+    saveResume(track, player.resumeAt);
     setNowPlaying({
       source: track.source,
       title: track.title,
@@ -734,6 +768,10 @@
     mix.quietTicks = 0;
     mix.context?.resume();
     audio.src = source;
+    if (player.resumeAt) {
+      audio.currentTime = player.resumeAt;
+      player.resumeAt = 0;
+    }
     try {
       await audio.play();
     } catch (error) {
@@ -752,6 +790,11 @@
   }
 
   function togglePlay() {
+    if (player.resume !== null) {
+      player.resumeAt = player.resume;
+      loadCurrent(0);
+      return;
+    }
     if (!audio.getAttribute('src')) return;
     if (fade.active) finishFade();
     mix.context?.resume();
@@ -759,7 +802,35 @@
     else audio.pause();
   }
 
+  function saveResume(track, pos) {
+    player.savedAt = Date.now();
+    try {
+      localStorage.setItem(RESUME_KEY, JSON.stringify({ track: storableTrack(track), pos }));
+    } catch {
+      // The song simply won't be waiting next time.
+    }
+  }
+
+  // Shows the last song, ready to go on from the same moment. Nothing plays until the person asks.
+  function restoreLastSong() {
+    try {
+      const { track, pos } = JSON.parse(localStorage.getItem(RESUME_KEY) || '{}');
+      if (!track?.title || player.index >= 0) return;
+      player.queue = [track];
+      player.index = 0;
+      player.resume = Number(pos) || 0;
+      setNowPlaying({ source: track.source, title: track.title, artist: track.artist, album: track.album || '', art: track.art || '', genre: track.genre || '', pos: player.resume, dur: track.duration || 0, playing: false, ...qualityBadge(track) });
+    } catch {
+      // Starts empty, as on a first visit.
+    }
+  }
+
   function seekTo(seconds) {
+    if (player.resume !== null) {
+      player.resume = seconds;
+      setNowPlaying({ pos: seconds });
+      return;
+    }
     if (audio.getAttribute('src')) audio.currentTime = seconds;
   }
 
@@ -768,7 +839,10 @@
       if (deck === audio && deck.src !== SILENT_AUDIO) setNowPlaying({ playing: true });
     });
     deck.addEventListener('pause', () => {
-      if (deck === audio) setNowPlaying({ playing: false });
+      if (deck !== audio) return;
+      setNowPlaying({ playing: false });
+      const track = player.queue[player.index];
+      if (track && deck.currentTime > 0) saveResume(track, deck.currentTime);
     });
     deck.addEventListener('timeupdate', () => {
       if (deck !== audio) return;
@@ -776,6 +850,7 @@
       const dur = Number.isFinite(deck.duration) ? deck.duration : player.np.dur;
       setNowPlaying({ pos: deck.currentTime, dur });
       const track = player.queue[player.index];
+      if (track) noteListening(track, deck);
       if (!player.counted && track?.source === 'solam' && deck.currentTime >= PLAY_COUNT_AFTER_SECONDS) {
         player.counted = true;
         api.server('countPlay', track.id, listenerId());
@@ -809,6 +884,49 @@
       }).catch(() => {});
     }, { capture: true, once: true });
   }
+
+  function loadStats() {
+    try {
+      const stats = JSON.parse(localStorage.getItem(STATS_KEY) || 'null');
+      if (stats?.songs && stats.artists) return stats;
+    } catch {
+      // Starts counting again.
+    }
+    return { seconds: 0, songs: {}, artists: {} };
+  }
+
+  function storeStats(stats) {
+    try {
+      localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    } catch {
+      // Stats simply won't grow for now.
+    }
+  }
+
+  // Stays on this device and is never sent to the Solam server.
+  function noteListening(track, deck) {
+    const passed = deck.currentTime - player.lastPos;
+    player.lastPos = deck.currentTime;
+    if (passed > 0 && passed < 3) player.unsaved += passed;
+    const counts = !player.listened && deck.currentTime >= PLAY_COUNT_AFTER_SECONDS;
+    if (Date.now() - player.savedAt > RESUME_SAVE_MS && deck.currentTime > 0) saveResume(track, deck.currentTime);
+    if (!counts && player.unsaved < STATS_SAVE_SECONDS) return;
+    const stats = loadStats();
+    stats.seconds += player.unsaved;
+    player.unsaved = 0;
+    if (counts) {
+      player.listened = true;
+      const key = trackKey(track);
+      stats.songs[key] = { track: storableTrack(track), plays: (stats.songs[key]?.plays || 0) + 1 };
+      if (track.artist) stats.artists[track.artist] = (stats.artists[track.artist] || 0) + 1;
+      const songs = Object.entries(stats.songs);
+      if (songs.length > STATS_SONG_LIMIT) stats.songs = Object.fromEntries(songs.sort((a, b) => b[1].plays - a[1].plays).slice(0, STATS_SONG_LIMIT));
+    }
+    storeStats(stats);
+  }
+
+  const topSongs = (stats, count) => Object.values(stats.songs).sort((a, b) => b.plays - a.plays).slice(0, count);
+  const topArtists = (stats, count) => Object.entries(stats.artists).sort((a, b) => b[1] - a[1]).slice(0, count);
 
   function setSleepTimer(minutes) {
     clearTimeout(sleep.timer);
@@ -846,7 +964,10 @@
     }
     if (next.art !== previous.art) onArtChanged();
     if (trackChanged || next.art !== previous.art) updateLockScreen(next);
-    if (trackChanged || next.playing !== previous.playing || next.art !== previous.art) updateDiscord();
+    if (trackChanged || next.playing !== previous.playing || next.art !== previous.art) {
+      updateDiscord();
+      window.SolamNative?.update(next.title || '', next.artist || '', next.art || '', Boolean(next.playing), Math.round((next.pos || 0) * 1000), Math.round((next.dur || 0) * 1000));
+    }
     renderPlayer();
   }
 
@@ -1239,7 +1360,7 @@
     },
     image ? h('img', { src: image, alt: '', loading: 'lazy', decoding: 'async' }) : h('div', { class: 'blank' }),
     h('div', { class: 'track-text' }, h('strong', {}, isOffline ? h('span', { class: 'offline-mark', title: 'Downloaded' }, icon('download')) : null, h('span', { raw: track.title })), artistLabel),
-    track.plays ? h('span', { class: 'plays', text: '{n} plays', values: { n: formatCount(track.plays) } }) : h('span'),
+    track.plays ? h('span', { class: 'plays', text: '{n} plays', values: { n: formatCount(track.plays) } }) : h('span', { class: 'plays' }),
     h('span', { class: `badge${lossless ? ' lossless' : ''}`, raw: badge }),
     heart,
     h('button', {
@@ -1322,6 +1443,7 @@
 
   /* ---------- home ---------- */
 
+  let searchTimer = 0;
   const homeParts = { input: null, results: null, forYou: null, trending: null, recent: null, artists: null, similar: null, albums: null };
   let searchToken = 0;
 
@@ -1497,12 +1619,13 @@
   }
 
   function buildHome() {
-    for (const part of ['results', 'newSongs', 'forYou', 'trending', 'recent', 'artists', 'similar', 'albums']) homeParts[part] = h('div', {});
+    for (const part of ['searches', 'results', 'newSongs', 'forYou', 'trending', 'recent', 'artists', 'similar', 'albums']) homeParts[part] = h('div', {});
     const discover = h('div', {}, homeParts.recent, homeParts.newSongs, homeParts.forYou, homeParts.trending, homeParts.artists, homeParts.similar, homeParts.albums);
     const showDiscover = () => {
       searchToken += 1;
       homeParts.results.replaceChildren();
       discover.hidden = false;
+      homeParts.hero.classList.remove('searching');
     };
     const input = h('input', {
       class: 'search',
@@ -1510,19 +1633,27 @@
       placeholder: 'Search for a song or artist',
       'aria-label': 'Search all music',
       onkeydown: (event) => {
-        if (event.key === 'Enter' && input.value.trim()) searchEverywhere(input.value.trim());
+        if (event.key === 'Enter' && input.value.trim()) {
+          clearTimeout(searchTimer);
+          searchEverywhere(input.value.trim());
+        }
       },
       oninput: () => {
-        if (!input.value.trim()) showDiscover();
+        clearTimeout(searchTimer);
+        const term = input.value.trim();
+        if (!term) showDiscover();
+        else if (term.length >= 2) searchTimer = setTimeout(() => searchEverywhere(term), SEARCH_WAIT_MS);
       },
     });
     homeParts.input = input;
     homeParts.discover = discover;
     $('#home').append(
-      h('div', { class: 'home-hero' },
+      homeParts.hero = h('div', { class: 'home-hero' },
         h('h1', { class: 'page-title', text: greeting() }),
         h('p', { class: 'page-sub', text: 'Free music, no ads. Search and press play.' }),
         input,
+        homeParts.searches,
+        h('button', { class: 'button primary mix-button', onclick: playMyMix }, icon('play'), h('span', { text: 'Play my mix' })),
         h('div', { class: 'chips genre-row' }, ...GENRES.map((genre) => h('button', {
           class: 'chip',
           text: genre,
@@ -1533,13 +1664,70 @@
         })))),
       homeParts.results,
       discover);
+    renderSearches();
     renderRecent();
     loadDiscover();
   }
 
+  function loadSearches() {
+    try {
+      const searches = JSON.parse(localStorage.getItem(SEARCHES_KEY) || '[]');
+      return Array.isArray(searches) ? searches : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function storeSearches(searches) {
+    try {
+      localStorage.setItem(SEARCHES_KEY, JSON.stringify(searches));
+    } catch {
+      // Recent searches simply won't be remembered.
+    }
+    renderSearches();
+  }
+
+  function renderSearches() {
+    const searches = loadSearches();
+    homeParts.searches.className = 'chips recent-searches';
+    homeParts.searches.replaceChildren(...searches.map((term) => h('button', {
+      class: 'chip',
+      raw: term,
+      onclick: () => {
+        homeParts.input.value = term;
+        searchEverywhere(term);
+      },
+    })), searches.length ? h('button', { class: 'chip ghost-chip', text: 'Clear', onclick: () => storeSearches([]) }) : null);
+  }
+
+  // Everything the person likes, mixed. New listeners get similar songs, so the button always plays.
+  async function playMyMix() {
+    const seen = new Set();
+    const pool = [...saved.favorites, ...topSongs(loadStats(), 30).map((song) => song.track), ...loadRecent(), ...saved.playlists.flatMap((list) => list.tracks)]
+      .filter((track) => {
+        const key = trackKey(track);
+        if (seen.has(key) || hiddenTracks.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    if (pool.length < MIX_SIZE / 2) {
+      const more = await api.similar(favouriteGenre()).catch(() => []);
+      pool.push(...more.filter((track) => !seen.has(trackKey(track)) && !hiddenTracks.has(trackKey(track))));
+    }
+    if (!pool.length) {
+      toast('Couldn’t load trending songs. Check your internet connection.');
+      return;
+    }
+    playQueue(pool.sort(() => Math.random() - 0.5).slice(0, MIX_SIZE), 0);
+  }
+
   async function searchEverywhere(term) {
     const token = ++searchToken;
+    setTimeout(() => {
+      if (token === searchToken) storeSearches([term, ...loadSearches().filter((item) => item.toLowerCase() !== term.toLowerCase())].slice(0, SEARCHES_LIMIT));
+    }, SEARCH_REMEMBER_MS);
     homeParts.discover.hidden = true;
+    homeParts.hero.classList.add('searching');
     const needle = term.toLowerCase();
     const local = library.tracks
       .filter((track) => `${track.title} ${track.artist} ${track.album}`.toLowerCase().includes(needle))
@@ -1926,6 +2114,8 @@
       body = downloads.length
         ? h('div', {}, h('p', { class: 'status-note', raw: [t(isWeb ? '{n} MB on this device' : '{n} MB on this PC', { n: megabytes }), downloadNote].filter(Boolean).join(' · ') }), trackList(downloads))
         : h('p', { class: 'empty', text: 'Open the … menu on a song to download it, if the artist allows it.' });
+    } else if (collectionTab === 'stats') {
+      body = listeningView();
     } else if (collectionTab === 'artists') {
       body = saved.follows.length ? artistGrid(saved.follows) : h('p', { class: 'empty', text: 'Follow an artist to see them here.' });
     } else {
@@ -1934,10 +2124,28 @@
     container.replaceChildren(
       h('h1', { class: 'page-title', text: 'Library' }),
       h('p', { class: 'page-sub', text: isWeb ? 'Your favourites, playlists and followed artists. Sign in to save them online.' : 'Your favourites, playlists and followed artists. They stay on this PC, or sign in to save them online.' }),
-      h('div', { class: 'chips' }, tab('favorites', 'Favourites'), tab('playlists', 'Playlists'), tab('downloads', 'Downloads'), tab('artists', 'Artists')),
+      h('div', { class: 'chips' }, tab('favorites', 'Favourites'), tab('playlists', 'Playlists'), tab('downloads', 'Downloads'), tab('artists', 'Artists'), tab('stats', 'Your stats')),
       body);
     renderPlayer();
     refreshHearts();
+  }
+
+  function listeningView() {
+    const stats = loadStats();
+    const songs = topSongs(stats, 5);
+    const artists = topArtists(stats, 5);
+    if (!songs.length) return h('p', { class: 'empty', text: 'Play a few songs to see your stats here.' });
+    const card = (value, label) => h('div', { class: 'stat-card' }, h('strong', { raw: formatCount(value) }), h('span', { text: label }));
+    return h('div', {},
+      h('div', { class: 'stat-cards' },
+        card(Math.round(stats.seconds / 60), 'Minutes listened'),
+        card(Object.keys(stats.songs).length, 'Different songs'),
+        card(Object.keys(stats.artists).length, 'Different artists')),
+      h('h2', { class: 'section-title', text: 'Top songs' }),
+      trackList(songs.map((song) => song.track)),
+      h('h2', { class: 'section-title', text: 'Top artists' }),
+      h('div', { class: 'stat-artists' }, ...artists.map(([name, plays], i) => h('div', { class: 'stat-artist' }, h('b', { raw: String(i + 1) }), h('span', { raw: name }), h('small', { text: '{n} plays', values: { n: plays } })))),
+      h('p', { class: 'status-note', text: 'Your stats stay on this device.' }));
   }
 
   function playlistsView() {
@@ -2278,6 +2486,7 @@
   const hasPremium = () => premium.active || !premiumOnSale();
   const transitionsOn = () => settings.crossfadeOn;
   const NEW_PERKS = [
+    ['Equalizer', 'Shape the sound to fit your headphones, on Windows.'],
     ['Pro song transitions', 'DJ mixes, echo outs, matched volume and no silence between songs, on Windows. Free accounts get a simple fade.'],
     ['Play next', 'Pick the song that comes right after this one.'],
     ['Up next', 'See your queue, add songs and remove them.'],
@@ -2289,7 +2498,6 @@
   ];
   const COMING_PERKS = [
     ['New themes', 'More animated backgrounds, only for Premium.'],
-    ['Equalizer', 'Shape the sound to fit your headphones.'],
     ['Your year in music', 'Your top songs and artists, ready to share.'],
     ['Listen together', 'Play the same song with friends at the same moment.'],
     ['Lyrics translation', 'Read what a song means in your language.'],
@@ -2952,7 +3160,8 @@
         fixedVolume || !hasPremium() ? null : slider('crossfade', 'Transition length', '', 1, 12, 1, (value) => `${value}s`),
         toggle('autoplay', 'Autoplay similar songs', 'Keeps the music going when your list ends'),
         isWeb ? null : toggle('discordOn', 'Show on Discord', 'Your Discord status shows the song you’re playing'),
-        sleepChoices()),
+        sleepChoices(),
+        richTransitions() ? segmented('eqPreset', 'Equalizer', 'Shape the sound to fit your headphones.', [['flat', 'Flat'], ['bass', 'Bass'], ['vocals', 'Vocals'], ['bright', 'Bright']]) : null),
 
       h('div', { class: 'setting-group' },
         h('h3', { text: 'Liquid Glass' }),
@@ -3107,10 +3316,10 @@
   }
 
   const WHATS_NEW_STEPS = [
-    ['Meet Solam AI', 'Ask for playlists, music, better settings or anything else. It always asks before changing things.', 'social'],
-    ['Lyrics, word by word', 'Each word now lights up as it’s sung, on a cover that melts into the background.', 'languages'],
-    ['Bring your playlists', 'Paste a Deezer or Audius playlist link in Connectors, and it’s in your Library.', 'search'],
-    ['Show it on Discord', 'On Windows, your Discord status can show the song you’re playing.', 'mix'],
+    ['Pick up where you left off', 'Your last song waits in the player, ready to go on from the same moment.', 'mix'],
+    ['A smarter Solam AI', 'It knows what you play, makes playlists you can really play, and can do much more.', 'social'],
+    ['Your stats', 'See your top songs and artists in Library.', 'languages'],
+    ['Search as you type', 'Results appear while you type, and one tap plays your own mix.', 'search'],
   ];
 
   const showWelcome = () => showTour(WELCOME_STEPS, 'Start listening');
@@ -3786,7 +3995,22 @@
 
   /* ---------- Solam AI ---------- */
 
-  const AI_SUGGESTIONS = ['Make me a chill playlist', 'Which settings suit my PC?', 'What can you do?'];
+  const AI_SENTENCE_WAIT_MS = 28;
+  const AI_REVEAL_MS = 900;
+  const AI_FIND_AT_ONCE = 4;
+  const AI_PAGES = { home: 'Home', artists: 'Artists', collection: 'Library', upload: 'Upload', connectors: 'Connectors', premium: 'Premium', account: 'Account', settings: 'Settings' };
+
+  // What to ask depends on what's happening right now.
+  function aiSuggestions() {
+    const lists = saved.playlists.length;
+    return [
+      player.np.title ? 'Find songs like this one' : 'Make me a chill playlist',
+      saved.favorites.length || Object.keys(loadStats().songs).length ? 'What should I listen to now?' : 'Make me a chill playlist',
+      lists ? 'Clean up my playlists' : 'Which settings suit my device?',
+      'What can you do?',
+    ].filter((text, i, all) => all.indexOf(text) === i);
+  }
+
   const AI_ERRORS = {
     'ai-limit': 'You’ve used all your Solam AI messages for today. They come back tomorrow, and Premium has many more.',
     'ai-busy': 'Solam AI is very busy right now. Please try again in a minute.',
@@ -3795,6 +4019,7 @@
   };
   const AI_SETTINGS = {
     theme: (value) => THEMES.some(([id]) => id === value) && value,
+    eqPreset: (value) => richTransitions() && Object.hasOwn(EQ_PRESETS, value) && value,
     quality: (value) => ['low', 'medium', 'high'].includes(value) && value,
     tint: (value) => numberBetween(value, 0, 1),
     blur: (value) => numberBetween(value, 0, 50),
@@ -3806,7 +4031,7 @@
   };
   const AI_SWITCHES = ['crossfadeOn', 'autoplay', 'extraMotion', 'rippleOn', 'beatOn', 'wobbleOn', 'shineOn', 'discordOn'];
   const AI_SETTING_NAMES = {
-    theme: 'Theme', quality: 'Quality', tint: 'Clear to tinted', blur: 'Frost', refraction: 'Edge bending', radius: 'Corner roundness', speed: 'Animation speed', brightness: 'Theme brightness', crossfade: 'Transition length',
+    theme: 'Theme', quality: 'Quality', eqPreset: 'Equalizer', tint: 'Clear to tinted', blur: 'Frost', refraction: 'Edge bending', radius: 'Corner roundness', speed: 'Animation speed', brightness: 'Theme brightness', crossfade: 'Transition length',
     crossfadeOn: 'Song transitions', autoplay: 'Autoplay similar songs', extraMotion: 'Extra animations', rippleOn: 'Mouse ripples', beatOn: 'Pulse to the beat', wobbleOn: 'Liquid wobble', shineOn: 'Reflections', discordOn: 'Show on Discord',
   };
   const ai = { messages: loadAi(), busy: false, left: null, box: null };
@@ -3837,7 +4062,8 @@
   function describeSetting({ key, value }) {
     const name = t(AI_SETTING_NAMES[key]);
     if (AI_SWITCHES.includes(key)) return t(aiSwitch(value) ? 'Turn {name} on' : 'Turn {name} off', { name });
-    const shown = key === 'theme' ? t(THEMES.find(([id]) => id === value)[1]) : key === 'quality' ? t(value[0].toUpperCase() + value.slice(1)) : String(value);
+    const named = key === 'quality' || key === 'eqPreset';
+    const shown = key === 'theme' ? t(THEMES.find(([id]) => id === value)[1]) : named ? t(value[0].toUpperCase() + value.slice(1)) : String(value);
     return t('Change {name} to {to}', { name, to: shown });
   }
 
@@ -3860,15 +4086,23 @@
   }
 
   function aiContext() {
+    const stats = loadStats();
+    const named = (track) => `${track.title} by ${track.artist}`;
     return {
       language: window.solamLanguage,
       device: isWeb ? 'phone or browser' : 'Windows PC',
       page: activePage,
-      nowPlaying: player.np.title ? `${player.np.title} by ${player.np.artist}` : null,
-      playlists: saved.playlists.slice(0, 25).map((list) => ({ name: list.name, songs: list.tracks.length })),
+      localTime: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+      nowPlaying: player.np.title ? named(player.np) : null,
+      topArtists: topArtists(stats, 8).map(([name]) => name),
+      topSongs: topSongs(stats, 6).map((song) => named(song.track)),
+      recentlyPlayed: loadRecent().slice(0, 6).map(named),
+      favouriteSongs: saved.favorites.slice(-8).map(named),
+      playlists: saved.playlists.slice(0, 25).map((list, i) => ({ name: list.name, songs: list.tracks.length, firstSongs: i < 5 ? list.tracks.slice(0, 5).map(named) : undefined })),
       favourites: saved.favorites.length,
       following: saved.follows.slice(0, 10).map((artist) => artist.name),
-      premium: premium.active,
+      premium: hasPremium(),
+      equalizer: richTransitions() ? settings.eqPreset : undefined,
       settings: { theme: settings.theme, quality: settings.quality, tint: settings.tint, blur: settings.blur, extraMotion: settings.extraMotion, crossfadeOn: settings.crossfadeOn, autoplay: settings.autoplay },
       memory: lastMemory,
       cores: navigator.hardwareConcurrency || null,
@@ -3895,16 +4129,42 @@
     if (name === 'remove_duplicates') return list ? t('Remove repeated songs from “{name}”', { name: list.name }) : null;
     if (name === 'delete_playlist') return list ? t('Delete the playlist “{name}”', { name: list.name }) : null;
     if (name === 'play_music') return args.query ? t('Play {name}', { name: args.query }) : null;
+    if (name === 'play_next') return args.query && hasPremium() ? t('Play {name} next', { name: args.query }) : null;
+    if (name === 'play_playlist') return list?.tracks.length ? t('Play the playlist “{name}”', { name: list.name }) : null;
+    if (name === 'like_current_song') return player.np.title ? t('Add “{name}” to favourites', { name: player.np.title }) : null;
+    if (name === 'open_page') return AI_PAGES[args.page] ? t('Open {name}', { name: t(AI_PAGES[args.page]) }) : null;
+    if (name === 'sleep_timer') return numberBetween(args.minutes, 1, 240) ? t('Stop the music in {n} minutes', { n: Number(args.minutes) }) : null;
     if (name === 'change_setting') return aiSettingAllowed(args) ? describeSetting(args) : null;
     return null;
   }
 
-  async function runAction({ name, args = {} }) {
+  // Turns the names the AI suggests into songs that really play, with their covers.
+  async function findAiSongs(songs) {
+    const wanted = aiSongs(songs);
+    const found = new Array(wanted.length).fill(null);
+    let next = 0;
+    const worker = async () => {
+      while (next < wanted.length) {
+        const at = next++;
+        found[at] = await api.matchSong(wanted[at].title, wanted[at].artist).catch(() => null);
+      }
+    };
+    await Promise.all(Array.from({ length: AI_FIND_AT_ONCE }, worker));
+    const real = found.filter(Boolean);
+    return real.length ? real : wanted;
+  }
+
+  async function runAction(action) {
+    const { name, args = {} } = action;
     const list = args.playlist ? findList(args.playlist) : null;
     if (name === 'make_playlist') {
-      saved.playlists.push({ id: crypto.randomUUID(), name: String(args.name).slice(0, 60), tracks: aiSongs(args.songs) });
+      const tracks = await findAiSongs(args.songs);
+      action.listId = crypto.randomUUID();
+      action.found = tracks.length;
+      saved.playlists.push({ id: action.listId, name: String(args.name).slice(0, 60), tracks });
     } else if (name === 'add_to_playlist') {
-      aiSongs(args.songs).forEach((track) => { if (!list.tracks.some((item) => trackKey(item) === trackKey(track))) list.tracks.push(track); });
+      action.listId = list.id;
+      (await findAiSongs(args.songs)).forEach((track) => { if (!list.tracks.some((item) => trackKey(item) === trackKey(track))) list.tracks.push(track); });
     } else if (name === 'rename_playlist') {
       list.name = String(args.name).slice(0, 60);
     } else if (name === 'sort_playlist') {
@@ -3924,6 +4184,25 @@
       const found = await api.search(String(args.query));
       if (!found.tracks.length) throw new Error('not-found');
       playQueue(found.tracks, 0);
+      return;
+    } else if (name === 'play_next') {
+      const found = await api.search(String(args.query));
+      if (!found.tracks.length) throw new Error('not-found');
+      playNext(found.tracks[0]);
+      return;
+    } else if (name === 'play_playlist') {
+      playQueue(list.tracks, 0);
+      return;
+    } else if (name === 'like_current_song') {
+      const track = player.queue[player.index];
+      if (track && !saved.favorites.some((item) => trackKey(item) === trackKey(track))) toggleFavourite(track);
+      return;
+    } else if (name === 'open_page') {
+      closeSheet();
+      showPage(args.page);
+      return;
+    } else if (name === 'sleep_timer') {
+      setSleepTimer(Number(args.minutes));
       return;
     } else if (name === 'change_setting') {
       changeSetting(args.key, AI_SWITCHES.includes(args.key) ? aiSwitch(args.value) : AI_SETTINGS[args.key](args.value));
@@ -3954,22 +4233,36 @@
       drawAi();
     };
     const songs = aiSongs(action.args?.songs);
-    const labels = { done: 'Done', no: 'Not done', failed: 'That didn’t work', working: 'Working…' };
+    const labels = { done: 'Done', no: 'Not done', failed: 'That didn’t work', working: songs.length ? 'Finding the songs…' : 'Working…' };
+    const madeList = action.state === 'done' && action.listId ? saved.playlists.find((list) => list.id === action.listId) : null;
     return h('div', { class: `ai-card${action.state ? ' answered' : ''}` },
       h('strong', { raw: text }),
       songs.length ? h('ul', { class: 'ai-songs' }, ...songs.slice(0, 6).map((song) => h('li', { raw: `${song.title} · ${song.artist}` })), songs.length > 6 ? h('li', { text: 'and {n} more', values: { n: songs.length - 6 } }) : null) : null,
-      action.state ? h('span', { class: `ai-state ${action.state}`, text: labels[action.state] }) : h('div', { class: 'actions' },
+      action.state ? h('span', { class: `ai-state ${action.state}`, text: labels[action.state] }) : null,
+      madeList?.tracks.length ? h('button', { class: 'button small primary ai-play', text: 'Play it', onclick: () => playQueue(madeList.tracks, 0) }) : null,
+      action.state ? null : h('div', { class: 'actions' },
         h('button', { class: 'button small primary', text: 'Yes, do it', onclick: () => answer(true) }),
         h('button', { class: 'button small', text: 'No', onclick: () => answer(false) })));
   }
 
+  // Words appear quickly one after another, so answers feel alive without making anyone wait.
+  function revealWords(text) {
+    const words = text.split(/(\s+)/);
+    const gap = Math.min(AI_SENTENCE_WAIT_MS, AI_REVEAL_MS / Math.max(1, words.length));
+    return words.map((word, i) => (/^\s*$/.test(word) ? document.createTextNode(word) : h('span', { class: 'ai-word', style: `animation-delay:${Math.round(i * gap)}ms`, raw: word })));
+  }
+
   function aiBubble(message) {
     const assistant = message.role === 'assistant';
+    const fresh = message === ai.fresh && settings.extraMotion;
+    const last = message === ai.messages[ai.messages.length - 1];
     return h('div', { class: `ai-row ${assistant ? 'from-ai' : 'from-you'}` },
       assistant ? h('span', { class: 'ai-mark' }, icon('spark')) : null,
       h('div', { class: 'ai-content' },
-        message.content ? h('div', { class: `ai-bubble${message.failed ? ' failed' : ''}`, raw: message.content }) : null,
-        ...(message.actions || []).map((action) => actionCard(message, action))));
+        message.content ? h('div', { class: `ai-bubble${message.failed ? ' failed' : ''}`, raw: fresh ? undefined : message.content }, ...(fresh ? revealWords(message.content) : [])) : null,
+        ...(message.actions || []).map((action) => actionCard(message, action)),
+        assistant && message.content && !message.failed ? h('button', { class: 'ai-tool', text: 'Copy', onclick: () => copyText(message.content) }) : null,
+        message.failed && last && !ai.busy ? h('button', { class: 'ai-tool', text: 'Try again', onclick: retryAi }) : null));
   }
 
   function drawAi() {
@@ -3983,9 +4276,10 @@
         h('span', { class: 'ai-hello-mark' }, icon('spark')),
         h('h2', { text: 'How can I help?' }),
         h('p', { text: 'Playlists, music, settings or any question. I always ask before changing anything.' }),
-        h('div', { class: 'ai-suggestions' }, ...AI_SUGGESTIONS.map((text) => h('button', { class: 'chip', text, onclick: () => sendToAi(t(text)) })))) : null,
+        h('div', { class: 'ai-suggestions' }, ...aiSuggestions().map((text) => h('button', { class: 'chip', text, onclick: () => sendToAi(t(text)) })))) : null,
       ...ai.messages.map(aiBubble),
       ai.busy ? h('div', { class: 'ai-row from-ai' }, h('span', { class: 'ai-mark' }, icon('spark')), h('div', { class: 'ai-typing' }, h('i'), h('i'), h('i'))) : null);
+    ai.fresh = null;
     if (atEnd || ai.busy) list.scrollTop = list.scrollHeight;
     const left = box.querySelector('.ai-left');
     left.textContent = ai.left === null ? '' : t('{n} messages left today', { n: ai.left });
@@ -3995,16 +4289,34 @@
     const clean = String(text).trim();
     if (!clean || ai.busy) return;
     ai.messages.push({ role: 'user', content: clean.slice(0, 1500) });
+    await askAiNow();
+  }
+
+  function retryAi() {
+    if (ai.busy) return;
+    ai.messages = ai.messages.filter((message, i) => !(message.failed && i === ai.messages.length - 1));
+    askAiNow();
+  }
+
+  // The AI also needs to know what it offered and what the person answered.
+  function aiMemory(message) {
+    const offers = (message.actions || []).map((action) => `[Offered: ${action.name}, answer: ${action.state === 'done' ? 'yes' : action.state === 'no' ? 'no' : 'none yet'}]`).join(' ');
+    return [message.content, offers].filter(Boolean).join(' ');
+  }
+
+  async function askAiNow() {
     ai.busy = true;
     storeAi();
     drawAi();
-    const history = ai.messages.filter((message) => message.content && !message.failed).slice(-AI_SENT_MESSAGES).map(({ role, content }) => ({ role, content }));
+    const history = ai.messages.filter((message) => (message.content || message.actions?.length) && !message.failed).slice(-AI_SENT_MESSAGES).map((message) => ({ role: message.role, content: aiMemory(message) }));
     const result = await api.server('askAi', history, aiContext());
     ai.busy = false;
     if (result.ok) {
       ai.left = result.value.left ?? ai.left;
       const actions = (result.value.actions || []).filter((action) => describeAction(action));
-      ai.messages.push({ role: 'assistant', content: result.value.reply || (actions.length ? '' : t('Sorry, I don’t have an answer for that.')), actions });
+      const reply = String(result.value.reply || '').replace(/\*\*|__|`|^#+\s*/gm, '').trim();
+      ai.messages.push({ role: 'assistant', content: reply || (actions.length ? '' : t('Sorry, I don’t have an answer for that.')), actions });
+      ai.fresh = ai.messages[ai.messages.length - 1];
     } else {
       ai.messages.push({ role: 'assistant', failed: true, content: t(AI_ERRORS[result.error] || (result.error === 'not-signed-in' ? 'Please sign in again.' : AI_ERRORS['ai-failed'])) });
     }
@@ -4423,6 +4735,11 @@
     $('#bc-next').textContent = t('Up next');
     $('#bc-comments').textContent = t('Comments');
     $('#bc-share').textContent = t('Share');
+    $('#bc-ask').textContent = t('Ask Solam AI');
+    $('#bc-ask').onclick = () => {
+      showAiSheet();
+      if (account.user && player.np.title) sendToAi(t('Tell me about the song “{title}” by {artist}.', { title: player.np.title, artist: player.np.artist }));
+    };
     $('#bc-next').onclick = showUpNext;
     $('#bc-comments').onclick = () => { const track = player.queue[player.index]; if (track) showComments(track); };
     $('#bc-share').onclick = () => { const track = player.queue[player.index]; if (track) showShareSheet(track); };
@@ -4485,10 +4802,22 @@
         step(1);
       } else if (event.ctrlKey && event.key === 'ArrowLeft') {
         step(-1);
+      } else if (event.target.matches('input[type="range"]') || event.ctrlKey || event.altKey || event.metaKey) {
+        // Sliders keep their own arrow keys, and other shortcuts belong to the system.
+      } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+        const moved = player.np.pos + (event.key === 'ArrowRight' ? KEY_SEEK_SECONDS : -KEY_SEEK_SECONDS);
+        seekTo(Math.max(0, Math.min(player.np.dur || moved, moved)));
+      } else if (!fixedVolume && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        volume.value = String(Number(volume.value) + (event.key === 'ArrowUp' ? KEY_VOLUME_STEP : -KEY_VOLUME_STEP));
+        volume.oninput();
+      } else if (event.key.toLowerCase() === 'l') {
+        $('#np-heart').click();
       }
     });
 
     api.onCommand(runCommand);
+    window.solamRemote = runCommand;
     api.onMiniState((open) => {
       miniOpen = open;
       $('#np-mini').classList.toggle('active', open);
@@ -4606,6 +4935,7 @@
     showLyricNote('Lyrics appear here when a song plays.');
     ['#dock', '#player', '#bc-lyrics'].forEach((selector) => window.LiquidGlass.attach($(selector)));
     applySettings();
+    restoreLastSong();
     renderPlayer();
     showPage('home');
     animate();
