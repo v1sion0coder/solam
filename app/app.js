@@ -1187,7 +1187,10 @@
       const match = /^<(\d+):(\d+(?:\.\d+)?)>(.*)$/.exec(part);
       if (match) match[3].trim().split(/\s+/).filter(Boolean).forEach((text) => exact.push({ text, time: Number(match[1]) * 60 + Number(match[2]) }));
     }
-    if (exact.length) return exact;
+    if (exact.length) {
+      line.exact = true;
+      return exact;
+    }
     const pieces = line.text.split(/\s+/).filter(Boolean);
     const letters = pieces.reduce((sum, word) => sum + word.length + 1, 0);
     const end = nextTime ?? line.time + LAST_LINE_SECONDS;
@@ -1249,6 +1252,7 @@
       box.classList.remove('plain');
       box.replaceChildren(...lyrics.lines.map((line) => h('p', { onclick: () => seekTo(line.time) }, ...line.words.map((word) => h('span', { class: 'word', raw: `${word.text} ` })))));
       updateLyricsPosition();
+      listenForWordTimes(token, player.queue[player.index]);
     } else if (plainText.trim()) {
       box.classList.add('plain');
       box.replaceChildren(
@@ -1257,6 +1261,25 @@
     } else {
       showLyricNote('No lyrics found for this song.');
     }
+  }
+
+  // Most lyrics only have a time for each line. Whisper listens to the song once, on the Solam server,
+  // and the exact time of every word is then saved for everyone. Until then, word times are estimated.
+  async function listenForWordTimes(token, track) {
+    if (!track || lyrics.lines.every((line) => line.exact)) return;
+    const audioUrl = /^https:/.test(track.url || '') ? track.url : '';
+    const lines = lyrics.lines.map((line) => ({ time: line.time, words: line.words.map((word) => word.text) }));
+    const result = await api.server('syncWords', `${track.title}|${track.artist}`, audioUrl, lines);
+    if (!result.ok || token !== lyrics.token || !Array.isArray(result.value?.times)) return;
+    result.value.times.forEach((words, i) => {
+      const line = lyrics.lines[i];
+      if (!line || line.exact || !Array.isArray(words) || words.length !== line.words.length) return;
+      line.words.forEach((word, k) => {
+        word.time = words[k][0];
+        word.end = words[k][1];
+      });
+    });
+    lyrics.wordIndex = -1;
   }
 
   function updateLyricsPosition() {
@@ -4973,6 +4996,93 @@
     else if (command === 'next') step(1);
     else if (command === 'prev') step(-1);
     else if (command?.seek !== undefined) seekTo(command.seek);
+    else if (command?.skip !== undefined) seekTo(Math.max(0, (audio.getAttribute('src') ? audio.currentTime : player.np.pos) + command.skip));
+  }
+
+  // The Android Back button: it closes what's open, then goes Home, and only then leaves Solam.
+  function goBack() {
+    if (document.getElementById('sheet')) closeSheet();
+    else if (document.body.classList.contains('big')) closeBigCover();
+    else if (activePage !== 'home') showPage('home');
+    else return false;
+    return true;
+  }
+
+  // A voice search from the TV or phone assistant, like "play jazz in Solam".
+  async function searchFromAssistant(query, play) {
+    closeSheet();
+    closeBigCover();
+    showPage('home');
+    if (!query) {
+      if (play) playMyMix();
+      return;
+    }
+    homeParts.input.value = query;
+    searchEverywhere(query);
+    if (!play) return;
+    const found = await api.search(query).catch(() => null);
+    if (found?.tracks.length) playQueue(found.tracks, 0);
+    else toast('No songs found. Try another search.');
+  }
+
+  const FOCUSABLE = 'button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"]), a[href]';
+
+  // TVs have no mouse, so the arrow keys move between the nearest things on screen in that direction.
+  function moveFocus(key) {
+    const from = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    const layer = document.getElementById('sheet') || document.getElementById('welcome') || (document.body.classList.contains('big') ? $('#bigcover') : null) || document;
+    const visible = [...layer.querySelectorAll(FOCUSABLE)].filter((element) => {
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && box.bottom > 0 && box.top < innerHeight && getComputedStyle(element).visibility !== 'hidden';
+    });
+    if (!from || !visible.includes(from)) {
+      visible[0]?.focus();
+      return;
+    }
+    const a = from.getBoundingClientRect();
+    const ax = a.left + a.width / 2;
+    const ay = a.top + a.height / 2;
+    let best = null;
+    let bestScore = Infinity;
+    for (const element of visible) {
+      if (element === from) continue;
+      const b = element.getBoundingClientRect();
+      const dx = b.left + b.width / 2 - ax;
+      const dy = b.top + b.height / 2 - ay;
+      const ahead = { ArrowRight: dx > 4, ArrowLeft: dx < -4, ArrowDown: dy > 4, ArrowUp: dy < -4 }[key];
+      if (!ahead) continue;
+      const along = key === 'ArrowRight' || key === 'ArrowLeft' ? Math.abs(dx) : Math.abs(dy);
+      const across = key === 'ArrowRight' || key === 'ArrowLeft' ? Math.abs(dy) : Math.abs(dx);
+      const score = along + across * 2.5;
+      if (score < bestScore) {
+        bestScore = score;
+        best = element;
+      }
+    }
+    if (best) {
+      best.focus({ preventScroll: true });
+      best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: settings.extraMotion ? 'smooth' : 'auto' });
+    }
+  }
+
+  function setupTv() {
+    if (!window.SolamNative?.isTv?.()) return;
+    document.documentElement.classList.add('tv');
+    // The TV box's graphics chip is weak, so the first time the glass is made lighter.
+    if (!settings.tvTuned) {
+      Object.assign(settings, { tvTuned: true, quality: 'low', blur: 8, rippleOn: false, wobbleOn: false });
+      saveSettings();
+      applySettings();
+    }
+    window.addEventListener('keydown', (event) => {
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      const typing = event.target.matches('input:not([type="range"]), textarea');
+      if (typing && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      moveFocus(event.key);
+    }, true);
+    setTimeout(() => moveFocus('ArrowDown'), 1500);
   }
 
   function wire() {
@@ -5085,6 +5195,8 @@
 
     api.onCommand(runCommand);
     window.solamRemote = runCommand;
+    window.solamBack = goBack;
+    window.solamSearch = (query, play) => { searchFromAssistant(String(query || ''), Boolean(play)); };
     api.onMiniState((open) => {
       miniOpen = open;
       $('#np-mini').classList.toggle('active', open);
@@ -5202,6 +5314,7 @@
     showLyricNote('Lyrics appear here when a song plays.');
     ['#dock', '#player', '#bc-lyrics'].forEach((selector) => window.LiquidGlass.attach($(selector)));
     applySettings();
+    setupTv();
     restoreLastSong();
     renderPlayer();
     showPage('home');

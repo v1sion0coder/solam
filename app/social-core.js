@@ -43,6 +43,15 @@
           throw new Error(/^ai-/.test(error.message) ? error.message : 'ai-failed');
         }
       },
+      // Word times for a song's lyrics. Songs already worked out need no account.
+      async syncWords(key, audioUrl, lines) {
+        const token = await optionalToken();
+        try {
+          return await json('/functions/v1/solam-sync', 'POST', { key, audioUrl, lines }, {}, token || undefined);
+        } catch (error) {
+          throw new Error(error.status === 429 ? 'sync-limit' : 'sync-failed');
+        }
+      },
       async saveAppSettings({ checkoutUrl, manageUrl, price }) {
         await json('/rest/v1/app_settings?id=eq.1', 'PATCH', { premium_checkout_url: checkoutUrl || null, premium_manage_url: manageUrl || null, premium_price: String(price || DEFAULT_SETTINGS.price).slice(0, 20) }, {}, await requireToken());
       },
