@@ -3,6 +3,7 @@
   const BUCKET = 'music';
   const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
   const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+  const MAX_COVER_BYTES = 15 * 1024 * 1024;
   const MIN_UPLOAD_AGE = 13;
   const SITE = 'https://v1sion0coder.github.io/solam/';
   const SESSION_KEY = 'solam.session';
@@ -97,10 +98,12 @@
   const publicUrl = (file) => `${config.url}/storage/v1/object/public/${BUCKET}/${file.split('/').map(encodeURIComponent).join('/')}`;
 
   function toTrack(row) {
-    const art = row.art_path ? publicUrl(row.art_path) : '';
+    const cover = row.art_path ? publicUrl(row.art_path) : '';
+    const artVideo = /\.(mp4|webm)$/i.test(row.art_path || '') ? cover : '';
+    const art = artVideo ? '' : cover;
     return {
       lyrics: row.lyrics || '', downloadable: Boolean(row.allow_download), id: row.id, source: 'solam', title: row.title,
-      artist: row.artists?.name || 'Solam artist', artistId: row.user_id, artistSource: 'solam', album: '', art, thumb: art,
+      artist: row.artists?.name || 'Solam artist', artistId: row.user_id, artistSource: 'solam', album: '', art, thumb: art, artVideo,
       url: publicUrl(row.audio_path), duration: row.duration || 0, plays: Number(row.plays) || 0, genre: row.genre || '', status: row.status, checkNotes: row.check_notes || [],
     };
   }
@@ -130,7 +133,9 @@
   function pickFile(kind) {
     const audio = kind === 'audio';
     const video = kind === 'video';
-    const types = audio ? AUDIO_TYPES : video ? VIDEO_TYPES : PHOTO_TYPES;
+    // A song cover can be a picture, a GIF or a short video, for everyone.
+    const cover = kind === 'cover';
+    const types = audio ? AUDIO_TYPES : video ? VIDEO_TYPES : cover ? { ...PHOTO_TYPES, ...VIDEO_TYPES } : PHOTO_TYPES;
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -146,7 +151,7 @@
         const extension = file.name.split('.').pop().toLowerCase();
         const type = types[extension];
         if (!type) { reject(new Error('bad-file-type')); return; }
-        if (file.size > (audio || video ? MAX_UPLOAD_BYTES : MAX_PHOTO_BYTES)) { reject(new Error(audio || video ? 'file-too-big' : 'photo-too-big')); return; }
+        if (file.size > (audio || video ? MAX_UPLOAD_BYTES : cover ? MAX_COVER_BYTES : MAX_PHOTO_BYTES)) { reject(new Error(audio || video ? 'file-too-big' : cover ? 'cover-too-big' : 'photo-too-big')); return; }
         const id = crypto.randomUUID();
         const info = { file, type, extension, duration: 0 };
         if (audio) info.duration = await audioLength(file);

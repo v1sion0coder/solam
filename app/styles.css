@@ -952,10 +952,10 @@ html.calm #dock-glider, html.calm .tile-art, html.calm #bigcover .bc-art, html.c
 
 /* Word by word lyrics */
 .bc-lyrics p.current { color: rgba(255, 255, 255, 0.42); background: none; filter: none; text-shadow: none; }
-.bc-lyrics .word { transition: color 0.2s; }
+.bc-lyrics .word { transition: color 0.35s ease, text-shadow 0.6s ease; }
 .bc-lyrics p.past .word { color: inherit; }
-.bc-lyrics p.current .word.said { color: #fff; }
-.bc-lyrics p.current .word.saying { color: transparent; background: linear-gradient(90deg, #fff var(--sweep, 0%), rgba(255, 255, 255, 0.42) var(--sweep, 0%)); -webkit-background-clip: text; background-clip: text; }
+.bc-lyrics p.current .word.said { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.35); }
+.bc-lyrics p.current .word.saying { color: transparent; background: linear-gradient(90deg, #fff calc(var(--sweep, 0%) - 8%), rgba(255, 255, 255, 0.42) calc(var(--sweep, 0%) + 8%)); -webkit-background-clip: text; background-clip: text; }
 html.calm .bc-lyrics p.current .word { color: #fff; background: none; }
 
 /* The cover melts into a background made from itself. */
@@ -1042,4 +1042,22 @@ body.big #ai-orb, body.on-assistant #ai-orb, body.wt-open #ai-orb { opacity: 0; 
 .ai-play { display: block; margin-top: 9px; }
 .ai-state { margin-right: 8px; }
 @media (prefers-reduced-motion: reduce) { .ai-word { animation: none; } }
-.home-hero.searching .mix-button, .home-hero.searching .genre-row, .home-hero.searching .recent-searches { display: none; }
+/* While results show, the chips stay hidden even with the keyboard open, so the list never jumps under a finger. */
+.home-hero.searching .mix-button, .home-hero.searching .genre-row, .home-hero.searching .recent-searches, .home-hero.searching:focus-within .recent-searches:not(:empty) { display: none; }
+
+/* Home: mix and radio */
+.mix-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 2px; }
+.mix-row .mix-button { margin: 0; }
+.home-hero.searching .mix-row { display: none; }
+.radio-moods { margin: 12px 0; }
+.radio-own { display: flex; gap: 8px; }
+.radio-own .field { flex: 1; min-width: 0; }
+
+/* Animated song covers */
+#np-art { position: relative; }
+#np-art .cover-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.bc-art .cover-video { position: absolute; object-fit: cover; border-radius: 8%; pointer-events: none; -webkit-mask-image: radial-gradient(closest-side, #000 74%, rgba(0, 0, 0, 0.55) 90%, transparent 100%); mask-image: radial-gradient(closest-side, #000 74%, rgba(0, 0, 0, 0.55) 90%, transparent 100%); }
+.track video, .quick-tile video, .tile-art video { object-fit: cover; background: rgba(255, 255, 255, 0.12); }
+.track video { width: 44px; height: 44px; border-radius: 9px; }
+.quick-tile video { flex: none; width: 52px; height: 52px; }
+.tile-art video { width: 100%; height: 100%; }

@@ -81,7 +81,7 @@
   const PREVIEW_VOLUME_SCALE = 0.55;
   const SITE = 'https://v1sion0coder.github.io/solam/';
   const FREE_DOWNLOADS = 10;
-  const WHATS_NEW_VERSION = '0.9.16';
+  const WHATS_NEW_VERSION = '0.9.17';
   const RESUME_KEY = 'solam.resume';
   const RESUME_SAVE_MS = 5000;
   const STATS_KEY = 'solam.stats';
@@ -92,6 +92,11 @@
   const SEARCH_WAIT_MS = 450;
   const SEARCH_REMEMBER_MS = 2000;
   const MIX_SIZE = 40;
+  const MONTH_SONG_LIMIT = 100;
+  const RADIO_SONGS = 15;
+  const RADIO_REFILL_LEFT = 3;
+  const RADIO_REMEMBER = 40;
+  const RADIO_MOODS = ['Chill', 'Focus', 'Party', 'Workout', 'Rainy evening', 'Road trip'];
   const KEY_SEEK_SECONDS = 5;
   const KEY_VOLUME_STEP = 0.05;
   const EQ_BANDS = [60, 250, 1000, 4000, 12000];
@@ -381,7 +386,7 @@
   /* ---------- player ---------- */
 
   const NOTHING = { source: null, title: '', artist: '', album: '', art: '', pos: 0, dur: 0, playing: false, badge: '', lossless: false };
-  const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0, repeat: 'off', shuffle: false, unshuffled: null, resume: null, resumeAt: 0, listened: false, lastPos: 0, unsaved: 0, savedAt: 0 };
+  const player = { queue: [], index: -1, np: { ...NOTHING }, seeking: false, sources: [], counted: false, skips: 0, repeat: 'off', shuffle: false, unshuffled: null, radio: null, resume: null, resumeAt: 0, listened: false, lastPos: 0, unsaved: 0, savedAt: 0 };
   const fade = { timer: 0, active: false, from: null, to: null };
   const sleep = { timer: 0, ends: 0, minutes: 0 };
 
@@ -554,7 +559,8 @@
     return settings.volume * (player.queue[player.index]?.source === 'preview' ? PREVIEW_VOLUME_SCALE : 1);
   }
 
-  function playQueue(queue, index) {
+  function playQueue(queue, index, radio = null) {
+    player.radio = radio;
     player.queue = [...queue];
     player.index = index;
     player.unshuffled = null;
@@ -670,7 +676,7 @@
     const offlineUrl = offline ? await api.offlineUrl(offline.id) : null;
     if (offlineUrl) player.sources = [offlineUrl];
     else player.sources = track.path ? [localUrl(track.path)] : [track.url, ...(track.fallbacks || [])];
-    if (settings.autoplay && !player.queue[player.index + 1]) extendQueue(track);
+    if (player.radio ? !player.queue[player.index + RADIO_REFILL_LEFT] : settings.autoplay && !player.queue[player.index + 1]) extendQueue(track);
     await playNextSource(track, fadeSeconds);
     if (track.path && !track.art) {
       const art = await api.localArt(track.path);
@@ -683,6 +689,16 @@
 
   // Keeps the music going with similar songs when the list runs out.
   async function extendQueue(track) {
+    const { radio } = player;
+    if (radio) {
+      if (radio.asking) return;
+      radio.asking = true;
+      const known = new Set(player.queue.map(trackKey));
+      const more = (await radioSongs(radio.mood, player.queue.map((item) => `${item.title} by ${item.artist}`))).filter((item) => !known.has(trackKey(item)));
+      radio.asking = false;
+      if (player.radio === radio) player.queue.push(...more);
+      return;
+    }
     try {
       const known = new Set(player.queue.map(trackKey));
       const unheard = async (genre) => (await api.similar(genre)).filter((item) => !known.has(trackKey(item)));
@@ -912,11 +928,19 @@
     if (Date.now() - player.savedAt > RESUME_SAVE_MS && deck.currentTime > 0) saveResume(track, deck.currentTime);
     if (!counts && player.unsaved < STATS_SAVE_SECONDS) return;
     const stats = loadStats();
+    const monthId = new Date().toISOString().slice(0, 7);
+    if (stats.month?.id !== monthId) stats.month = { id: monthId, seconds: 0, songs: {}, artists: {} };
     stats.seconds += player.unsaved;
+    stats.month.seconds += player.unsaved;
     player.unsaved = 0;
     if (counts) {
       player.listened = true;
       const key = trackKey(track);
+      const { month } = stats;
+      month.songs[key] = { track: storableTrack(track), plays: (month.songs[key]?.plays || 0) + 1 };
+      if (track.artist) month.artists[track.artist] = (month.artists[track.artist] || 0) + 1;
+      const monthSongs = Object.entries(month.songs);
+      if (monthSongs.length > MONTH_SONG_LIMIT) month.songs = Object.fromEntries(monthSongs.sort((a, b) => b[1].plays - a[1].plays).slice(0, MONTH_SONG_LIMIT));
       stats.songs[key] = { track: storableTrack(track), plays: (stats.songs[key]?.plays || 0) + 1 };
       if (track.artist) stats.artists[track.artist] = (stats.artists[track.artist] || 0) + 1;
       const songs = Object.entries(stats.songs);
@@ -960,6 +984,7 @@
     const trackChanged = next.title !== previous.title || next.artist !== previous.artist;
     if (trackChanged) {
       onTrackChanged();
+      syncCoverVideo();
       animateSongChange();
     }
     if (next.art !== previous.art) onArtChanged();
@@ -1114,6 +1139,43 @@
   /* ---------- lyrics ---------- */
 
   const lyrics = { lines: [], synced: false, token: 0, currentIndex: -1 };
+  const LYRIC_CACHE_LIMIT = 60;
+  const LYRICS_AHEAD = 2;
+  const MAX_CLOCK_GUESS = 0.5;
+  const SWEEP_SOFTNESS = 8;
+  const lyricCache = new Map();
+  const lyricClock = { pos: -1, at: 0 };
+
+  // Lyrics are kept for a while and fetched for the next songs early, so they are usually ready the moment a song starts.
+  function fetchLyrics(track) {
+    const key = `${track.title}|${track.artist}`.toLowerCase();
+    if (lyricCache.has(key)) return lyricCache.get(key);
+    const asked = api.lyrics({ title: track.title, artist: track.artist, album: track.album || '', duration: track.duration || track.dur || 0 }).catch(() => null);
+    lyricCache.set(key, asked);
+    if (lyricCache.size > LYRIC_CACHE_LIMIT) lyricCache.delete(lyricCache.keys().next().value);
+    // A failed lookup can be tried again later.
+    asked.then((found) => { if (!found) lyricCache.delete(key); });
+    return asked;
+  }
+
+  function fetchUpcomingLyrics() {
+    player.queue.slice(player.index + 1, player.index + 1 + LYRICS_AHEAD).forEach((track) => {
+      if (track?.title && !track.lyrics && track.source !== 'imported') fetchLyrics(track);
+    });
+  }
+
+  // The audio clock only moves a few times a second, so in between it is filled in, which keeps the word sweep smooth.
+  function lyricTime() {
+    if (!audio.getAttribute('src')) return player.np.pos;
+    const now = performance.now();
+    if (audio.currentTime !== lyricClock.pos) {
+      lyricClock.pos = audio.currentTime;
+      lyricClock.at = now;
+      return audio.currentTime;
+    }
+    if (audio.paused) return audio.currentTime;
+    return audio.currentTime + Math.min(MAX_CLOCK_GUESS, (now - lyricClock.at) / 1000) * audio.playbackRate;
+  }
 
   const WORD_TIME = /<(\d+):(\d+(?:\.\d+)?)>/g;
 
@@ -1172,8 +1234,9 @@
     const own = player.queue[player.index]?.lyrics;
     const found = own
       ? { synced: /^\s*\[\d+:\d+/.test(own) ? own : '', plain: own }
-      : await api.lyrics({ title, artist, album, duration: dur });
+      : await fetchLyrics({ title, artist, album, duration: dur });
     if (token !== lyrics.token) return;
+    fetchUpcomingLyrics();
     // A preview is a short clip from inside the song, so timed lyrics wouldn't line up with it.
     const isPreview = hasOnlyPreview(player.queue[player.index]);
     if (found?.synced && !isPreview) {
@@ -1198,7 +1261,7 @@
 
   function updateLyricsPosition() {
     if (!lyrics.synced) return;
-    const pos = audio.getAttribute('src') ? audio.currentTime : player.np.pos;
+    const pos = lyricTime();
     let index = -1;
     for (let i = 0; i < lyrics.lines.length; i++) {
       if (lyrics.lines[i].time <= pos + 0.15) index = i;
@@ -1213,7 +1276,7 @@
       });
       lyrics.wordIndex = -1;
       const current = box.children[index];
-      if (current) box.scrollTop = current.offsetTop - box.clientHeight / 2 + current.offsetHeight / 2;
+      if (current) box.scrollTo({ top: current.offsetTop - box.clientHeight / 2 + current.offsetHeight / 2, behavior: settings.extraMotion ? 'smooth' : 'auto' });
     }
     const line = lyrics.lines[index];
     if (!line) return;
@@ -1235,7 +1298,9 @@
     if (spoken >= 0) {
       const word = words[spoken];
       const end = word.end ?? words[spoken + 1]?.time ?? word.time + 0.6;
-      spans[spoken].style.setProperty('--sweep', `${(Math.min(1, (pos - word.time) / Math.max(0.05, end - word.time)) * 100).toFixed(1)}%`);
+      const progress = Math.min(1, (pos - word.time) / Math.max(0.05, end - word.time));
+      // The lit edge is soft, so it starts just before the word and ends just after it.
+      spans[spoken].style.setProperty('--sweep', `${(progress * (100 + SWEEP_SOFTNESS * 2) - SWEEP_SOFTNESS).toFixed(1)}%`);
     }
   }
 
@@ -1326,6 +1391,40 @@
 
   /* ---------- lists ---------- */
 
+  // Animated covers play silently in a loop. They only load once they are on screen.
+  function coverMedia(track, image) {
+    if (track.artVideo) {
+      const video = h('video', { class: 'shown', src: track.artVideo, muted: '', loop: '', autoplay: '', playsinline: '', preload: 'metadata', 'aria-hidden': 'true' });
+      video.muted = true;
+      return video;
+    }
+    return image ? h('img', { src: image, alt: '', loading: 'lazy', decoding: 'async' }) : h('div', { class: 'blank' });
+  }
+
+  // The player and Now Playing show the moving cover over the still picture.
+  function syncCoverVideo() {
+    const source = player.queue[player.index]?.artVideo || '';
+    for (const [holder, picture] of [[$('#np-art'), $('#np-art img')], [document.querySelector('.bc-art'), $('#bc-img')]]) {
+      let video = holder.querySelector('.cover-video');
+      if (!source) {
+        video?.remove();
+        continue;
+      }
+      if (!video) {
+        video = h('video', { class: 'cover-video', muted: '', loop: '', autoplay: '', playsinline: '', 'aria-hidden': 'true' });
+        video.muted = true;
+        holder.append(video);
+      }
+      if (video.getAttribute('src') !== source) video.src = source;
+      if (holder !== $('#np-art')) placeOver(video, picture);
+      video.play().catch(() => {});
+    }
+  }
+
+  function placeOver(video, picture) {
+    Object.assign(video.style, { left: `${picture.offsetLeft}px`, top: `${picture.offsetTop}px`, width: `${picture.offsetWidth}px`, height: `${picture.offsetWidth}px` });
+  }
+
   function trackRow(track, queue, index, context) {
     const { badge, lossless } = qualityBadge(track);
     (track.artMirrors || []).forEach((server) => artServers.add(server));
@@ -1358,7 +1457,7 @@
         if (event.key === 'Enter' && event.target === row) playQueue(queue, index);
       },
     },
-    image ? h('img', { src: image, alt: '', loading: 'lazy', decoding: 'async' }) : h('div', { class: 'blank' }),
+    coverMedia(track, image),
     h('div', { class: 'track-text' }, h('strong', {}, isOffline ? h('span', { class: 'offline-mark', title: 'Downloaded' }, icon('download')) : null, h('span', { raw: track.title })), artistLabel),
     track.plays ? h('span', { class: 'plays', text: '{n} plays', values: { n: formatCount(track.plays) } }) : h('span', { class: 'plays' }),
     h('span', { class: `badge${lossless ? ' lossless' : ''}`, raw: badge }),
@@ -1477,7 +1576,7 @@
   function quickTile(track, queue, index) {
     const image = track.thumb || track.art;
     return h('button', { class: 'quick-tile', 'data-key': `${track.title}|${track.artist}`, onclick: () => playQueue(queue, index) },
-      image ? h('img', { src: image, alt: '', loading: 'lazy', decoding: 'async' }) : h('div', { class: 'blank' }),
+      coverMedia(track, image),
       h('span', { raw: track.title }));
   }
 
@@ -1486,7 +1585,7 @@
     const image = track.thumb || track.art;
     return h('div', { class: 'song-tile', role: 'button', tabindex: 0, 'data-key': `${track.title}|${track.artist}`, onclick: () => playQueue(queue, index), onkeydown: (event) => { if (event.key === 'Enter') playQueue(queue, index); } },
       h('div', { class: 'tile-art' },
-        image ? h('img', { src: image, alt: '', loading: 'lazy', decoding: 'async' }) : h('div', { class: 'blank' }),
+        coverMedia(track, image),
         h('span', { class: 'tile-play' }, icon('play'))),
       h('strong', { raw: track.title }),
       h('span', { raw: track.artist }));
@@ -1653,7 +1752,9 @@
         h('p', { class: 'page-sub', text: 'Free music, no ads. Search and press play.' }),
         input,
         homeParts.searches,
-        h('button', { class: 'button primary mix-button', onclick: playMyMix }, icon('play'), h('span', { text: 'Play my mix' })),
+        h('div', { class: 'mix-row' },
+          h('button', { class: 'button primary mix-button', onclick: playMyMix }, icon('play'), h('span', { text: 'Play my mix' })),
+          h('button', { class: 'button mix-button', onclick: showRadioSheet }, icon('spark'), h('span', { text: 'AI radio' }))),
         h('div', { class: 'chips genre-row' }, ...GENRES.map((genre) => h('button', {
           class: 'chip',
           text: genre,
@@ -2145,6 +2246,7 @@
       trackList(songs.map((song) => song.track)),
       h('h2', { class: 'section-title', text: 'Top artists' }),
       h('div', { class: 'stat-artists' }, ...artists.map(([name, plays], i) => h('div', { class: 'stat-artist' }, h('b', { raw: String(i + 1) }), h('span', { raw: name }), h('small', { text: '{n} plays', values: { n: plays } })))),
+      stats.month?.songs && Object.keys(stats.month.songs).length ? h('button', { class: 'button primary', text: 'Share my month in music', onclick: (event) => shareMonthPicture(stats.month, event.currentTarget) }) : null,
       h('p', { class: 'status-note', text: 'Your stats stay on this device.' }));
   }
 
@@ -2563,7 +2665,7 @@
         h('h1', { class: 'page-title', text: 'Solam Premium' }),
         status),
       h('h2', { class: 'section-title', text: 'New in Premium' }),
-      perkCards(NEW_PERKS),
+      perkCards(isWeb ? NEW_PERKS.filter(([title]) => title !== 'Equalizer') : NEW_PERKS),
       h('h2', { class: 'section-title', text: 'Also in Premium' }),
       perkCards(PERKS),
       h('h2', { class: 'section-title', text: 'Coming soon' }),
@@ -2579,6 +2681,7 @@
     'form-incomplete': 'Please answer all 5 questions.',
     'name-taken': 'That app name is already taken.',
     'file-too-big': 'That file is over the 50 MB limit.',
+    'cover-too-big': 'That cover is over the 15 MB limit.',
     'bad-file-type': 'That file type isn’t supported.',
     'daily-limit': 'You reached today’s upload limit.',
     'pick-again': 'Please choose the file again.',
@@ -2960,7 +3063,7 @@
         }
         send.disabled = true;
         message.textContent = t('Uploading…');
-        const result = await api.server('upload', { audioId: chosen.audio.id, artId: chosen.art?.id, title: title.value, genre: genre.value, ownsMusic: true, lyrics: lyricsBox.value, allowDownload: allowDownload.checked });
+        const result = await api.server('upload', { audioId: chosen.audio.id, artId: chosen.cover?.id, title: title.value, genre: genre.value, ownsMusic: true, lyrics: lyricsBox.value, allowDownload: allowDownload.checked });
         send.disabled = false;
         if (result.ok) {
           toast('Uploaded! It goes public once it is approved.');
@@ -2974,7 +3077,8 @@
       h('h3', { text: 'Upload a song' }),
       h('p', { class: 'status-note', text: premium.active ? 'Songs go public after approval. Up to 50 MB each and 30 songs a day.' : 'Songs go public after approval. Up to 50 MB each and 10 songs a day.' }),
       picker('audio', 'Choose song file'),
-      picker('art', 'Choose cover (optional)'),
+      picker('cover', 'Choose cover (optional)'),
+      h('p', { class: 'status-note', text: 'A picture, a GIF or a short video. Animated covers move in the player. Up to 15 MB.' }),
       labelled('Song title', '', title),
       labelled('Genre', '', genre),
       labelled('Lyrics (optional)', 'Most small artists’ songs have no lyrics anywhere else, so people only see them if you add them. Timed lines like [00:12.00] scroll with the song.', lyricsBox),
@@ -3213,7 +3317,7 @@
         h('h3', { text: 'About Solam' }),
         h('p', { id: 'about-version', class: 'status-note', text: 'Beta version' }),
         h('p', { class: 'status-note', text: 'This is a beta version, so some things may not work yet.' }),
-        h('div', { class: 'actions' }, h('button', { class: 'button', text: 'Contact support', onclick: showSupportForm }), h('button', { class: 'button', text: 'Replay the welcome tour', onclick: showWelcome }), h('button', { class: 'button', text: 'See what’s new', onclick: showWhatsNew })),
+        h('div', { class: 'actions' }, h('button', { class: 'button primary', text: 'Invite friends', onclick: showAppInvite }), h('button', { class: 'button', text: 'Contact support', onclick: showSupportForm }), h('button', { class: 'button', text: 'Replay the welcome tour', onclick: showWelcome }), h('button', { class: 'button', text: 'See what’s new', onclick: showWhatsNew })),
         legalLinks()),
 
       h('div', { class: 'actions' }, h('button', {
@@ -3258,6 +3362,7 @@
   function showMoreSheet() {
     openSheet('More',
       ...PHONE_MORE.map(([id, label, iconName]) => h('button', { class: 'sheet-row', onclick: () => showPage(id) }, icon(iconName), h('span', { text: label }))),
+      h('button', { class: 'sheet-row', onclick: showAppInvite }, icon('share'), h('span', { text: 'Invite friends' })),
       h('button', { class: 'sheet-row', onclick: showSupportForm }, icon('mail'), h('span', { text: 'Contact support' })));
   }
 
@@ -3316,10 +3421,10 @@
   }
 
   const WHATS_NEW_STEPS = [
-    ['Pick up where you left off', 'Your last song waits in the player, ready to go on from the same moment.', 'mix'],
-    ['A smarter Solam AI', 'It knows what you play, makes playlists you can really play, and can do much more.', 'social'],
-    ['Your stats', 'See your top songs and artists in Library.', 'languages'],
-    ['Search as you type', 'Results appear while you type, and one tap plays your own mix.', 'search'],
+    ['AI radio', 'Pick a mood on Home, and Solam AI keeps playing songs that fit it.', 'social'],
+    ['Your month in music', 'Share a picture of your top songs and artists, from Your stats in Library.', 'languages'],
+    ['Invite friends', 'Send Solam to friends with a link or a code they can scan.', 'search'],
+    ['Animated covers', 'Upload a GIF or a short video as your song’s cover, for free.', 'mix'],
   ];
 
   const showWelcome = () => showTour(WELCOME_STEPS, 'Start listening');
@@ -3581,6 +3686,10 @@
     button.disabled = true;
     const blob = await makeStoryPicture(track, link);
     button.disabled = false;
+    sharePicture(blob);
+  }
+
+  async function sharePicture(blob) {
     if (!blob) {
       toast('Something went wrong. Please try again.');
       return;
@@ -3605,6 +3714,163 @@
         h('button', { class: navigator.share ? 'button' : 'button primary', text: 'Copy link', onclick: () => copyText(link) }),
         story));
     drawQr(document.querySelector('#sheet .qr-code'), link, 420);
+  }
+
+  // Word of mouth is how Solam grows, so inviting someone takes one tap.
+  function showAppInvite() {
+    const link = SITE;
+    const text = t('Solam is a free music app with no ads. Try it:');
+    openSheet('Invite friends',
+      h('p', { class: 'status-note', text: 'Solam is free with no ads. Send friends this link, or let them scan the code.' }),
+      h('canvas', { class: 'qr-code', 'aria-label': 'QR code' }),
+      h('div', { class: 'actions' },
+        navigator.share ? h('button', { class: 'button primary', text: 'Share link', onclick: () => navigator.share({ title: 'Solam', text, url: link }).catch(() => {}) }) : null,
+        h('button', { class: navigator.share ? 'button' : 'button primary', text: 'Copy link', onclick: () => copyText(`${text} ${link}`) })));
+    drawQr(document.querySelector('#sheet .qr-code'), link, 420);
+  }
+
+  // A story picture of the month: minutes, top songs and top artists.
+  async function makeMonthPicture(month) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const context = canvas.getContext('2d');
+    const glow = getComputedStyle(document.documentElement).getPropertyValue('--glow').trim() || '120, 170, 255';
+    const sky = context.createLinearGradient(0, 0, 1080, 1920);
+    sky.addColorStop(0, `rgb(${glow})`);
+    sky.addColorStop(0.55, '#141032');
+    sky.addColorStop(1, '#0a0c1c');
+    context.fillStyle = sky;
+    context.fillRect(0, 0, 1080, 1920);
+    const font = (weight, size) => `${weight} ${size}px "Segoe UI", -apple-system, system-ui, sans-serif`;
+    const monthName = new Date(`${month.id}-15`).toLocaleDateString(window.solamLanguage, { month: 'long' });
+    context.fillStyle = 'rgba(255,255,255,.8)';
+    context.font = font(600, 46);
+    context.fillText(t('My {month} in music', { month: monthName }), 90, 170);
+    context.fillStyle = '#fff';
+    context.font = font(800, 190);
+    context.fillText(formatCount(Math.round(month.seconds / 60)), 80, 360);
+    context.fillStyle = 'rgba(255,255,255,.8)';
+    context.font = font(500, 50);
+    context.fillText(t('minutes listened'), 92, 435);
+    const glass = (y, height) => {
+      context.fillStyle = 'rgba(255,255,255,.1)';
+      context.strokeStyle = 'rgba(255,255,255,.35)';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.roundRect(60, y, 960, height, 44);
+      context.fill();
+      context.stroke();
+    };
+    const songs = topSongs(month, 5);
+    glass(500, 110 + songs.length * 118);
+    context.fillStyle = '#fff';
+    context.font = font(700, 50);
+    context.fillText(t('Top songs'), 110, 580);
+    for (const [i, song] of songs.entries()) {
+      const y = 620 + i * 118;
+      const source = song.track.thumb || song.track.art;
+      const data = source ? (source.startsWith('data:') ? source : await api.imageData(source).catch(() => null)) : null;
+      const art = data ? await loadImage(data) : null;
+      context.save();
+      context.beginPath();
+      context.roundRect(110, y, 96, 96, 18);
+      context.clip();
+      if (art) context.drawImage(art, 110, y, 96, 96);
+      else {
+        context.fillStyle = 'rgba(255,255,255,.15)';
+        context.fillRect(110, y, 96, 96);
+      }
+      context.restore();
+      context.fillStyle = '#fff';
+      context.font = font(650, 42);
+      context.fillText(wrapText(context, song.track.title, 720, 1)[0] || '', 236, y + 42);
+      context.fillStyle = 'rgba(255,255,255,.7)';
+      context.font = font(400, 36);
+      context.fillText(wrapText(context, song.track.artist, 720, 1)[0] || '', 236, y + 86);
+    }
+    const artists = topArtists(month, 3);
+    const artistsTop = 640 + songs.length * 118;
+    if (artists.length) {
+      glass(artistsTop, 110 + artists.length * 66);
+      context.fillStyle = '#fff';
+      context.font = font(700, 50);
+      context.fillText(t('Top artists'), 110, artistsTop + 85);
+      artists.forEach(([name], i) => {
+        context.fillStyle = 'rgba(255,255,255,.55)';
+        context.font = font(700, 40);
+        context.fillText(String(i + 1), 110, artistsTop + 156 + i * 66);
+        context.fillStyle = '#fff';
+        context.font = font(500, 42);
+        context.fillText(wrapText(context, name, 780, 1)[0] || '', 170, artistsTop + 156 + i * 66);
+      });
+    }
+    const qr = drawQr(document.createElement('canvas'), SITE, 170);
+    context.save();
+    context.beginPath();
+    context.roundRect(90, 1680, 170, 170, 20);
+    context.clip();
+    context.drawImage(qr, 90, 1680);
+    context.restore();
+    context.fillStyle = '#fff';
+    context.font = font(700, 54);
+    context.fillText('Solam', 300, 1755);
+    context.fillStyle = 'rgba(255,255,255,.75)';
+    context.font = font(400, 38);
+    context.fillText(t('Free music. No ads.'), 300, 1810);
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  async function shareMonthPicture(month, button) {
+    button.disabled = true;
+    const blob = await makeMonthPicture(month).catch(() => null);
+    button.disabled = false;
+    sharePicture(blob);
+  }
+
+  function radioPrompt(mood, played) {
+    const avoid = played.slice(-RADIO_REMEMBER).join('; ');
+    return `Radio mode. Make a playlist of ${RADIO_SONGS} songs that fit this mood: "${mood}". Call make_playlist straight away, with no question.${avoid ? ` Don't use any of these songs: ${avoid}` : ''}`;
+  }
+
+  // Each refill is one Solam AI message, so the radio never spends more than it plays.
+  async function radioSongs(mood, played) {
+    const result = await api.server('askAi', [{ role: 'user', content: radioPrompt(mood, played) }], aiContext());
+    if (!result.ok) {
+      toast(AI_ERRORS[result.error] || (result.error === 'not-signed-in' ? 'Please sign in again.' : AI_ERRORS['ai-failed']));
+      return [];
+    }
+    ai.left = result.value.left ?? ai.left;
+    const offer = (result.value.actions || []).find((action) => action.name === 'make_playlist' || action.name === 'add_to_playlist');
+    if (!offer) return [];
+    return findAiSongs(offer.args?.songs);
+  }
+
+  async function startRadio(mood) {
+    const clean = String(mood).trim().slice(0, 60);
+    if (!clean) return;
+    if (!account.user) {
+      toast('Sign in for free to chat with Solam AI.');
+      closeSheet();
+      showPage('account');
+      return;
+    }
+    closeSheet();
+    toast('Starting {mood} radio…', { mood: clean });
+    const songs = await radioSongs(clean, []);
+    if (!songs.length) {
+      toast('Solam AI couldn’t answer just now. Please try again.');
+      return;
+    }
+    playQueue(songs, 0, { mood: clean, asking: false });
+  }
+
+  function showRadioSheet() {
+    const input = h('input', { class: 'field', placeholder: 'Or type any mood', 'aria-label': 'Mood', maxlength: 60, onkeydown: (event) => { if (event.key === 'Enter') startRadio(input.value); } });
+    openSheet('AI radio',
+      h('p', { class: 'status-note', text: 'Pick a mood, and Solam AI keeps finding songs that fit. Every 15 songs use one Solam AI message.' }),
+      h('div', { class: 'chips radio-moods' }, ...RADIO_MOODS.map((mood) => h('button', { class: 'chip', text: mood, onclick: () => startRadio(t(mood)) }))),
+      h('div', { class: 'radio-own' }, input, h('button', { class: 'button primary', text: 'Start', onclick: () => startRadio(input.value) })));
   }
 
   function showInviteSheet(list) {
@@ -4552,6 +4818,7 @@
 
   let idleTimer = 0;
   function openBigCover() {
+    requestAnimationFrame(() => requestAnimationFrame(syncCoverVideo));
     document.body.classList.add('big');
     $('#bigcover').setAttribute('aria-hidden', 'false');
     markActive();

@@ -143,3 +143,5 @@ body.big.idle #player { opacity: 1; transform: none; }
 .stat-card { padding: 11px; }
 .stat-card strong { font-size: 21px; }
 .stat-card span { font-size: 11.5px; }
+.track video { width: 48px; height: 48px; border-radius: 10px; }
+.quick-tile video { width: 46px; height: 46px; }
